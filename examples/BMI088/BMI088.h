@@ -9,58 +9,79 @@
 #define PI 3.141592653589793
 //#define DEBUG_BMI088 // Uncomment for debug output
 
-// ---------------- Configuration ----------------
-constexpr unsigned SPI_BAUD  = 5000000;   
-constexpr unsigned SPI_FLAGS = 0x100;     // AUX SPI (SPI1), mode 0
-constexpr unsigned CS_GYR    = 1;         // /dev/spidev1.1
-constexpr unsigned CS_ACC    = 0;
-
-// ---------------- BMI088 Gyro Registers --------
-constexpr uint8_t BMI088_GYR_CHIP_ID   = 0x00;
-constexpr uint8_t BMI088_GYR_RANGE     = 0x0F;
-constexpr uint8_t BMI088_GYR_BANDWIDTH = 0x10;
-constexpr uint8_t BMI088_GYR_DATA_X_L  = 0x02;
-constexpr uint8_t BMI088_GYRO_LPM1     = 0x11;
-constexpr uint8_t FIFO_CONFIG_1        = 0x3E;
-
-// ----------------- BMI088 Accel Registers ---------------
-constexpr uint8_t BMI088_ACC_CHIP_ID  = 0x00;
-constexpr uint8_t BMI088_ACC_CONF     = 0x40; // set oversampling and ODR
-constexpr uint8_t BMI088_ACC_range    = 0x41; 
-constexpr uint8_t BMI088_ACC_PWR_CONF = 0x7C; 
-constexpr uint8_t BMI088_ACC_PWR_CTRL = 0x7D;
-// Expected IDs
-constexpr uint8_t BMI088_ACC_ID = 0x1E;
-constexpr uint8_t BMI088_GYR_ID = 0x0F;
-
-
 class BMI088 {
     public:
-    enum class AccelOversampling {
-        OSR4   = 0x08,  // Strongest filtering (lowest bandwidth, least noise)
-        OSR2   = 0x09,  // Medium filtering
-        Normal = 0x0A   // Lightest filtering (highest bandwidth) – recommended for high ODR
-    };
+        enum class AccelOversampling {
+            OSR4   = 0x08,  // Strongest filtering (lowest bandwidth, least noise)
+            OSR2   = 0x09,  // Medium filtering
+            Normal = 0x0A   // Lightest filtering (highest bandwidth) – recommended for high ODR
+        };
 
-        enum class GyroRange {
-        DPS_2000 = 0x00,
-        DPS_1000 = 0x01,
-        DPS_500  = 0x02,
-        DPS_250  = 0x03,
-        DPS_125  = 0x04
-    };
+            enum class GyroRange {
+            DPS_2000 = 0x00,
+            DPS_1000 = 0x01,
+            DPS_500  = 0x02,
+            DPS_250  = 0x03,
+            DPS_125  = 0x04
+        };
 
-    enum class GyroBandwidth {
-        ODR_2000Hz_BW_532Hz = 0x00,  
-        ODR_2000Hz_BW_230Hz = 0x01,
-        ODR_1000Hz_BW_116Hz = 0x02,
-        ODR_400Hz_BW_47Hz   = 0x03,
-        ODR_200Hz_BW_23Hz   = 0x04,
-        ODR_100Hz_BW_12Hz   = 0x05,
-        ODR_200Hz_BW_64Hz   = 0x06,
-        ODR_100Hz_BW_32Hz   = 0x07
-    };
+        enum class GyroBandwidth {
+            ODR_2000Hz_BW_532Hz = 0x00,  
+            ODR_2000Hz_BW_230Hz = 0x01,
+            ODR_1000Hz_BW_116Hz = 0x02,
+            ODR_400Hz_BW_47Hz   = 0x03,
+            ODR_200Hz_BW_23Hz   = 0x04,
+            ODR_100Hz_BW_12Hz   = 0x05,
+            ODR_200Hz_BW_64Hz   = 0x06,
+            ODR_100Hz_BW_32Hz   = 0x07
+        };
 
+        BMI088(){
+            spi_gyro = spiOpen(CS_GYR, SPI_BAUD, SPI_FLAGS);
+            if (spi_gyro < 0)
+            {
+                std::cerr << "SPI gyro open failed\n";
+                gpioTerminate();
+            }
+            spi_acc = spiOpen(CS_ACC, SPI_BAUD, SPI_FLAGS);
+
+            if (spi_acc < 0)
+            {
+                std::cerr << "SPI accel open failed\n";
+                gpioTerminate();
+            }
+            // Verify gyro identity
+            initGyro(BMI088::GyroRange::DPS_1000, BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz);
+            uint8_t id = spiRead8(spi_gyro, BMI088_GYR_CHIP_ID);
+
+            #ifdef DEBUG_BMI088
+                std::cout << "Gyro CHIP_ID: 0x" << std::hex << int(id) << std::dec << "\n";
+            #endif
+
+            if (id != BMI088_GYR_ID)
+            {
+                std::cerr << "Gyro not detected\n";
+                spiClose(spi_gyro);
+                spiClose(spi_acc);
+                gpioTerminate();
+            }
+
+            // Verify accel identity/needed for startup with spi
+            initAccelerometer(6, 800.0, BMI088::AccelOversampling::Normal);
+            id = readAccelChipID();
+
+            #ifdef DEBUG_BMI088
+                std::cout << "Accel CHIP_ID: 0x"<< std::hex << int(id) << std::dec << "\n";
+            #endif
+
+            if (id != BMI088_ACC_ID)
+            {
+                std::cerr << "Accel not detected\n";
+                spiClose(spi_gyro);
+                spiClose(spi_acc);
+                gpioTerminate();
+            }
+        }
         BMI088(uint8_t accel_range, double accel_odr, AccelOversampling accel_osr, 
             GyroRange gyro_range, GyroBandwidth gyro_bandwidth){
             spi_gyro = spiOpen(CS_GYR, SPI_BAUD, SPI_FLAGS);
@@ -404,5 +425,30 @@ double getAccelScaleFactor_g(uint8_t reg_value) {
     
     int spi_gyro = -1;
     int spi_acc = -1;
+
+
+    // --------------- Configuration ---------------
+    static constexpr unsigned SPI_BAUD  = 5000000;   
+    static constexpr unsigned SPI_FLAGS = 0x100;     // AUX SPI (SPI1), mode 0
+    static constexpr unsigned CS_GYR    = 1;         // /dev/spidev1.1
+    static constexpr unsigned CS_ACC    = 0;
+    // --------------- BMI088 Gyro Registers ---------------
+    static constexpr uint8_t BMI088_GYR_CHIP_ID   = 0x00;
+    static constexpr uint8_t BMI088_GYR_RANGE     = 0x0F;
+    static constexpr uint8_t BMI088_GYR_BANDWIDTH = 0x10;
+    static constexpr uint8_t BMI088_GYR_DATA_X_L  = 0x02;
+    static constexpr uint8_t BMI088_GYRO_LPM1     = 0x11;
+    static constexpr uint8_t FIFO_CONFIG_1        = 0x3E;
+    static constexpr uint8_t GYRO_INT_STAT_1      = 0x0A;
+    // --------------- BMI088 Accel Registers ---------------
+    static constexpr uint8_t BMI088_ACC_CHIP_ID  = 0x00;
+    static constexpr uint8_t BMI088_ACC_CONF     = 0x40; // set oversampling and ODR
+    static constexpr uint8_t BMI088_ACC_range    = 0x41; 
+    static constexpr uint8_t BMI088_ACC_PWR_CONF = 0x7C; 
+    static constexpr uint8_t BMI088_ACC_PWR_CTRL = 0x7D;
+    static constexpr uint8_t ACC_STATUS          = 0x03;
+    // Expected IDs
+    static constexpr uint8_t BMI088_ACC_ID = 0x1E;
+    static constexpr uint8_t BMI088_GYR_ID = 0x0F;
 
 };

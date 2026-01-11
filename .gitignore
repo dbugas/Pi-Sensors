@@ -1,0 +1,4 @@
+.venv
+*.so
+main
+lis3mdl_test

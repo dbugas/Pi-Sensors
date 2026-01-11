@@ -44,4 +44,4 @@ int main() {
 
     return 0;
 }
-// g++ main.cpp PCA9685.cpp -o main -lpigpio -lpthread
+// g++ main.cpp PCA9685.cpp -o main -lpigpio -lpthread -O3

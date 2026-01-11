@@ -25,8 +25,8 @@ int main()
         return 1;
     }
 
-    BMI088 bmi(6, 800.0, BMI088::AccelOversampling::Normal, 
-        BMI088::GyroRange::DPS_1000, BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz);
+    //BMI088 bmi(6, 800.0, BMI088::AccelOversampling::Normal, BMI088::GyroRange::DPS_1000, BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz);
+    BMI088 bmi;
     imu_buffer[0] = {};
     imu_buffer[1] = {};
 
@@ -74,5 +74,5 @@ int main()
     return 0;
 }
 
-// g++ -std=c++23 main.cpp vqf.cpp -lpigpio -lrt -pthread -o main
+// g++ -std=c++23 main.cpp vqf.cpp -lpigpio -lrt -pthread -O3 -o main
 
