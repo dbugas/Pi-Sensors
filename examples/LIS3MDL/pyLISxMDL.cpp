@@ -5,8 +5,8 @@
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(pylis3mdl, m) {
-    m.doc() = "Python bindings for LIS3MDL";
+PYBIND11_MODULE(pylisxmdl, m) {
+    m.doc() = "Python bindings for LISxMDL";
 
     // Enums
     py::enum_<LISxMDL::ODR>(m, "ODR")
@@ -32,10 +32,11 @@ PYBIND11_MODULE(pylis3mdl, m) {
         .export_values();
 
     // Class
-    py::class_<LISxMDL>(m, "LIS3MDL")
+    py::class_<LISxMDL>(m, "pylisxmdl")
         .def(py::init<LISxMDL::FullScale, LISxMDL::ODR>(),
              py::arg("range") = LISxMDL::FullScale::Gauss_16,
-             py::arg("odr")   = LISxMDL::ODR::Hz_10)
+             py::arg("odr")   = LISxMDL::ODR::Hz_80)
+
         .def("read_raw", [](LISxMDL &self) {
             int16_t mx, my, mz;
             if (self.readRaw(mx, my, mz))

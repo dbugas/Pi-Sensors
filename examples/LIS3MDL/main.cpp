@@ -12,7 +12,7 @@ int main() {
     }
 
 LISxMDL mag(
-    LISxMDL::FullScale::Gauss_16,
+    LISxMDL::FullScale::Gauss_8,
     LISxMDL::ODR::Hz_80
     );
 

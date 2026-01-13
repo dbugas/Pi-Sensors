@@ -3,13 +3,37 @@ from scipy.linalg import svd, eigh
 from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import math
+import time
+import sys
+import termios
+import tty
+import select
 
+from pylisxmdl import pylisxmdl, FullScale, ODR
+import daepso as daepso_module   
+
+"""
+R = 
+-0.68512761   0.72569165   0.06302210
+ 0.72663274  -0.12893599   0.67432876
+-0.05103928   0.98964828  -0.13413153
+
+S = 
+2.17548075   0.00000000   0.00000000
+0.00000000   2.12745755   0.00000000
+0.00000000   0.00000000   2.08222143
+
+x0 = [0.042518, 0.016366, 0.156674]
+
+"""
 # =============================================
 # Configuration
 # =============================================
-GENERATE_RANDOM_ELLIPSOID = True
-# GENERATE_RANDOM_ELLIPSOID = False   # uncomment to use real data
-
+GENERATE_RANDOM_ELLIPSOID = False     # use real data. 
+SAVE_DATA = True                      # save real data
+LOAD_DATA = False                     # Load real data
+filepath = ""                         # path for loading data
 # =============================================
 # Main execution
 # =============================================
@@ -21,7 +45,7 @@ def main():
         except RuntimeError as e:
             print("Error generating ellipsoid:", e)
             return
-
+         
         # Step 2: Generate noisy points
         points = generate_noisy_points(a, b, c, x0, V)
 
@@ -44,44 +68,37 @@ def main():
 
     else:
         # === REAL DATA MODE ===
-        # You need to implement your own data loading here
-        print("REAL DATA MODE - please implement your data loading")
-        print("(example assumes magnetometer data in columns 9,10,11 - 0-based)")
-        
-        # Placeholder - replace with your actual loading
-        # rawData = np.loadtxt("your_file.csv", delimiter=",")
-        # points = rawData[:, 8:11].T   # x,y,z magnetometer
-        
-        # For testing we fall back to synthetic
-        points = generate_noisy_points(1.2, 1.0, 0.9, 
-                                     np.array([0.12, -0.18, 0.07]), 
-                                     np.eye(3))
 
-        coeffs, coeffs_svd, x0_fit, lambda_fit, V_fit, a_fit, b_fit, c_fit, J0_fit = \
-            fit_ellipsoid(points)
+        if(LOAD_DATA):
+            points = np.loadtxt(
+                filepath,
+                delimiter=',',
+                skiprows=1,          
+                dtype=np.float64)
+        else:
+            points = Get_data()
+            if(SAVE_DATA):
+                np.savetxt(
+                    "mag_xyz.csv",
+                    points,
+                    delimiter=',',
+                    header='X_gauss,Y_gauss,Z_gauss',
+                    comments='',
+                    fmt='%.10f')
+
+        print("Fitting Data...")
+        coeffs, coeffs_svd, x0_fit, lambda_fit, V_fit, a_fit, b_fit, c_fit, J0_fit = fit_ellipsoid(points)
 
         rms = compute_rms(coeffs, points)
 
-        print_results(np.zeros(10), coeffs, np.zeros(3), x0_fit, np.zeros(3),
-                      lambda_fit, 0, 0, 0, a_fit, b_fit, c_fit, 0, J0_fit, rms,
-                      GENERATE_RANDOM_ELLIPSOID)
+        print_results(np.zeros(10), coeffs, np.zeros(3), lambda_fit,
+                      0, 0, 0, a_fit, b_fit, c_fit, 0, J0_fit, rms, 
+                      np.zeros([3,3]), V_fit, np.zeros([3]), x0_fit, GENERATE_RANDOM_ELLIPSOID)
 
-        plot_ellipsoids(points, np.zeros(3), x0_fit, coeffs, a_fit, b_fit, c_fit)
+        plot_ellipsoids(points, np.zeros(3), x0_fit, coeffs, a_fit, b_fit, c_fit, V_fit)
 
         sphere_points = transform_to_sphere(points, x0_fit, V_fit, a_fit, b_fit, c_fit)
         plot_sphere_points(sphere_points)
-
-        # Final calibration print
-        print("\n" + "="*50)
-        print("CALIBRATION PARAMETERS (real data mode)")
-        print("="*50)
-        print("Equation:   S @ R @ (mag_raw - bias)")
-        print("\nRotation matrix R (V^T):")
-        print(np.round(V_fit.T, 6))
-        print("\nBias (center) x0:")
-        print(np.round(x0_fit, 6))
-        print("\nScale matrix diagonal (1/a, 1/b, 1/c):")
-        print(np.diag([1/a_fit, 1/b_fit, 1/c_fit]).round(6))
 
 
 # =============================================
@@ -97,9 +114,9 @@ def generate_ellipsoid(max_attempts=1000):
         attempt += 1
         
         # Reasonable positive definite tendency
-        A = np.random.uniform(0.5, 2.0)
-        B = np.random.uniform(0.5, 2.0)
-        C = np.random.uniform(0.5, 2.0)
+        A = np.random.uniform(-2.0, 2.0)
+        B = np.random.uniform(-2.0, 2.0)
+        C = np.random.uniform(-2.0, 2.0)
         
         # Controlled cross terms
         scale_cross = 0.35 * min(A, B, C)
@@ -111,7 +128,7 @@ def generate_ellipsoid(max_attempts=1000):
         G = np.random.uniform(-1.2, 1.2)
         H = np.random.uniform(-1.2, 1.2)
         I = np.random.uniform(-1.2, 1.2)
-        J = np.random.uniform(-2.5, -0.4)  # helps ensure J0 < 0
+        J = np.random.uniform(-2.5, 2.5)
         
         T = np.array([
             [2*A, D,   E],
@@ -185,7 +202,7 @@ def generate_noisy_points(a, b, c, x0, V, num_points=1200, noise_level=0.05):
 
     noise_scale = noise_level * min(a, b, c)
     points += noise_scale * np.random.randn(*points.shape)
-
+    
     return points
 
 
@@ -219,41 +236,68 @@ def fit_ellipsoid(points):
         coeffs[:6] += 1e-6 * np.random.randn(6)
         coeffs /= np.linalg.norm(coeffs[:6])
     
-    # Nonlinear refinement
-    def residual(p):
-        A, B, C, D, E, F, G, H, I, J = p
-    
-        # Compute quadric value
-        quad = (A*X**2 + B*Y**2 + C*Z**2 +
-            D*X*Y + E*X*Z + F*Y*Z +
-            G*X + H*Y + I*Z + J)
-    
-        # Build Q matrix (symmetric)
-        Q = np.array([
-            [A,     D/2,   E/2],
-            [D/2,   B,     F/2],
-            [E/2,   F/2,   C  ]
-            ], dtype=np.float64)
-    
-        # Norm = sqrt( p^T Q p )  → geometric scaling
-        # Add strong epsilon + clip very small values
-        Qp = Q @ points
-        norms_squared = np.sum(points * Qp, axis=0)
-        norms = np.sqrt(np.maximum(norms_squared, 1e-12))   # ← crucial protection
-    
-        # Avoid division by extremely small numbers
-        safe_div = np.where(norms > 1e-6, 1.0 / norms, 1.0)
-    
-        resid = quad * safe_div
-    
-        # Final safety: clip extreme residuals (prevents inf explosion in optimizer)
-        resid = np.clip(resid, -1e6, 1e6)
-    
-        return resid
 
-    res = least_squares(residual,coeffs,method='dogbox',ftol=1e-8,xtol=1e-8,gtol=1e-8,
-                        max_nfev=4000,verbose=0,loss='soft_l1',f_scale=1.0)
-    coeffs = res.x
+    def ellipsoid_cost(p, points):
+        A, B, C, D, E, F, G, H, I, J = p
+        X, Y, Z = points
+
+        # compute f(x)
+        quad = (
+            A*X**2 + B*Y**2 + C*Z**2 +
+            D*X*Y + E*X*Z + F*Y*Z +
+            G*X + H*Y + I*Z + J
+        )
+
+        Q = np.array([
+            [A, D/2, E/2],
+            [D/2, B, F/2],
+            [E/2, F/2, C]
+        ], dtype=np.float64)
+
+        pts = np.vstack((X, Y, Z))
+        Qp = Q @ pts
+        norms_sq = np.sum(pts * Qp, axis=0)
+        norms = np.sqrt(np.maximum(norms_sq, 1e-12))
+        safe_div = np.where(norms > 1e-6, 1.0 / norms, 1.0)
+
+        # r = f(x)/sqrt(x^TQx)
+        resid = quad * safe_div
+        resid = np.clip(resid, -1e6, 1e6)
+
+        return np.mean(resid**2) + 1e-5 * np.sum(p**2)
+    
+    # Objective function binding points
+    def objective(p):
+        return ellipsoid_cost(p, points)
+    dim = 10
+    bounds = [
+        (-5, 5),  # A
+        (-5, 5),  # B
+        (-5, 5),  # C
+        (-5, 5),  # D
+        (-5, 5),  # E
+        (-5, 5),  # F
+        (-30, 30),      # G
+        (-30, 30),      # H
+        (-30, 30),      # I
+        (-40, 40)       # J
+    ]
+    
+    # Run DAEPSO
+    optimizer = daepso_module.DAEPSO(
+        dim=dim,
+        n_particles=100,
+        max_iter=3000,
+        bounds=bounds,
+        elite_count=30,
+        stagnation_threshold=20
+    )
+
+    best_p, best_cost, history = optimizer.optimize(objective, verbose=True)
+    res = []
+    for name, val in zip("A B C D E F G H I J".split(), best_p):
+        res.append(val)
+    coeffs = np.array(res)
     coeffs /= np.linalg.norm(coeffs[:6])
 
     # Final sign check
@@ -266,7 +310,9 @@ def fit_ellipsoid(points):
     # Choose better solution
     rms_svd = compute_rms(coeffs_svd, points)
     rms_ls  = compute_rms(coeffs, points)
-    if rms_svd < rms_ls:
+    print(f"rms SVD {rms_svd}")
+    print(f"rms DAEPSO {rms_ls}")
+    if rms_svd < rms_ls or math.isnan(rms_ls):
         coeffs = coeffs_svd
 
     A,B,C,D,E,F,G,H,I,J = coeffs
@@ -331,7 +377,7 @@ def print_results(params, coeffs, lambda_orig, lambda_fit,
         print(f"  Original: a={a:.4f}  b={b:.4f}  c={c:.4f}")
         print(f"  Fitted:   a={a_fit:.4f}  b={b_fit:.4f}  c={c_fit:.4f}\n")
         print("\n" + "═"*30)
-        print("\nUnit transformation: S*R*([points] - x0)\n")
+        print("\nUnit transformation: S*R^T*([points] - x0)\n")
         print("═"*30)
         print("Rotation original R = ")
         for row in V:
@@ -348,20 +394,35 @@ def print_results(params, coeffs, lambda_orig, lambda_fit,
         for row in V_fit:
             print(" ".join(f"{v:8.8f}" for v in row))
         print("Inverse semi-major axis fitted S = ")
-        S = [[1/a,0,0],[0,1/b,0],[0,0,1/c]]
+        S = [[1/a_fit,0,0],[0,1/b_fit,0],[0,0,1/c_fit]]
         for row in S:
             print(" ".join(f"{v:8.8f}" for v in row))
         print("Ellipse center fitted x0 = ")
-        for x in x0:
+        for x in x0_fit:
             print(f"{x:8.3f}")
         
     else:
         print("FITTED ELLIPSOID PARAMETERS:")
+        print("\n" + "═"*30)
         for n, val in zip("ABCDEFGHIJ", coeffs):
             print(f"{n} = {val:.7f}")
         print(f"J0_fit = {J0_fit:.7f}")
         print(f"Center: {x0_fit.round(6)}")
         print(f"Semi-axes: a={a_fit:.4f}  b={b_fit:.4f}  c={c_fit:.4f}")
+
+        print("\n" + "═"*30)
+        print("\nUnit transformation: S*R^T*([points] - x0)\n")
+        print("═"*30)
+        print("\nRotation fitted R =")
+        for row in V_fit:
+            print(" ".join(f"{v:8.8f}" for v in row))
+        print("Inverse semi-major axis fitted S = ")
+        S = [[1/a_fit,0,0],[0,1/b_fit,0],[0,0,1/c_fit]]
+        for row in S:
+            print(" ".join(f"{v:8.8f}" for v in row))
+        print("Ellipse center fitted x0 = ")
+        for x in x0_fit:
+            print(f"{x:8.3f}")
 
     print(f"\nRMS geometric error = {rms:.6f}")
     print("═"*50 + "\n")
@@ -496,7 +557,75 @@ def plot_sphere_points(sphere_points):
     ax.set_box_aspect([1,1,1])
     
     plt.show()
+# =============================================
+# Real Time Data
+# =============================================
+def Get_data():
+    print("LIS3MDL Magnetometer - Press SPACE to stop")
+    print("-----------------------------------------\n")
 
+    # Make stdin non-blocking and disable echo
+    old_settings = termios.tcgetattr(sys.stdin)
+    try:
+        tty.setcbreak(sys.stdin.fileno())
+
+        # Initialize sensor - feel free to change parameters
+        try:
+            mag = pylisxmdl(FullScale.Gauss_4, ODR.Hz_80)
+            print("Sensor initialized successfully")
+        except Exception as e:
+            print("Failed to initialize sensor:", e)
+            print("(make sure pigpiod is running → sudo pigpiod)")
+            return
+
+        print("      X [G]        Y [G]        Z [G]     ")
+        print("-------------------------------------------------------------------")
+
+        running = True
+        data = []
+        while running:
+            # Read data
+            try:
+
+                if(mag.data_ready()):
+                    x, y, z = mag.read_gauss()
+                    print(f"{x:12.5f}  {y:12.5f}  {z:12.5f} ",
+                      end='\r', flush=True)
+                    data.append([x,y,z])
+
+            except RuntimeError as e:
+                print(f"\nRead error: {e}")
+                time.sleep(1)
+
+            # Check for SPACE key (or Ctrl+C handled by except KeyboardInterrupt)
+            key = get_key()
+            if key == ' ':
+                print("\n\nSPACE pressed → stopping...")
+                running = False
+            elif key == '\x03':  # Ctrl+C
+                raise KeyboardInterrupt
+
+            time.sleep(0.0025)  # ~12–13 updates/sec
+
+    except KeyboardInterrupt:
+        print("\n\nStopped by Ctrl+C")
+    except Exception as e:
+        print("\nError:", e)
+    finally:
+        # Restore terminal settings
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+        print("Terminal restored")
+    return np.array(data).T
+
+def key_pressed():
+    i, _, _ = select.select([sys.stdin], [], [], 0.0)
+    return i
+
+
+def get_key():
+    if key_pressed():
+        return sys.stdin.read(1)
+    return None
 
 if __name__ == "__main__":
     main()
