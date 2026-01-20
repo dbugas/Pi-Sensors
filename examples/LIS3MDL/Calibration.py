@@ -15,16 +15,18 @@ import daepso as daepso_module
 
 """
 R = 
--0.68512761   0.72569165   0.06302210
- 0.72663274  -0.12893599   0.67432876
--0.05103928   0.98964828  -0.13413153
+-0.63130273 0.09122449 0.77015255
+-0.76346217 0.10144869 -0.63783515
+0.13631715 0.99064941 -0.00560161
 
 S = 
-2.17548075   0.00000000   0.00000000
-0.00000000   2.12745755   0.00000000
-0.00000000   0.00000000   2.08222143
+2.20546146 0.00000000 0.00000000
+0.00000000 2.13858202 0.00000000
+0.00000000 0.00000000 2.05353251
 
-x0 = [0.042518, 0.016366, 0.156674]
+x0 = 0.03628057
+     0.02168861
+     0.15742409
 
 """
 # =============================================
@@ -106,9 +108,7 @@ def main():
 # =============================================
 
 def generate_ellipsoid(max_attempts=1000):
-    """
-    More stable version - tries to avoid infs/NaNs and ill-conditioned cases
-    """
+
     attempt = 0
     while attempt < max_attempts:
         attempt += 1
@@ -271,25 +271,25 @@ def fit_ellipsoid(points):
         return ellipsoid_cost(p, points)
     dim = 10
     bounds = [
-        (-5, 5),  # A
-        (-5, 5),  # B
-        (-5, 5),  # C
-        (-5, 5),  # D
-        (-5, 5),  # E
-        (-5, 5),  # F
-        (-30, 30),      # G
-        (-30, 30),      # H
-        (-30, 30),      # I
-        (-40, 40)       # J
+        (-2, 2),  # A
+        (-2, 2),  # B
+        (-2, 2),  # C
+        (-2, 2),  # D
+        (-2, 2),  # E
+        (-2, 2),  # F
+        (-10, 10),      # G
+        (-10, 10),      # H
+        (-10, 10),      # I
+        (-10, 10)       # J
     ]
     
     # Run DAEPSO
     optimizer = daepso_module.DAEPSO(
         dim=dim,
         n_particles=100,
-        max_iter=3000,
+        max_iter=1000,
         bounds=bounds,
-        elite_count=30,
+        elite_count=10,
         stagnation_threshold=20
     )
 
@@ -312,7 +312,7 @@ def fit_ellipsoid(points):
     rms_ls  = compute_rms(coeffs, points)
     print(f"rms SVD {rms_svd}")
     print(f"rms DAEPSO {rms_ls}")
-    if rms_svd < rms_ls or math.isnan(rms_ls):
+    if rms_svd < rms_ls or np.isnan(rms_ls):
         coeffs = coeffs_svd
 
     A,B,C,D,E,F,G,H,I,J = coeffs
@@ -422,7 +422,7 @@ def print_results(params, coeffs, lambda_orig, lambda_fit,
             print(" ".join(f"{v:8.8f}" for v in row))
         print("Ellipse center fitted x0 = ")
         for x in x0_fit:
-            print(f"{x:8.3f}")
+            print(f"{x:8.8f}")
 
     print(f"\nRMS geometric error = {rms:.6f}")
     print("═"*50 + "\n")
@@ -575,7 +575,7 @@ def Get_data():
             print("Sensor initialized successfully")
         except Exception as e:
             print("Failed to initialize sensor:", e)
-            print("(make sure pigpiod is running → sudo pigpiod)")
+            print("Use sudo")
             return
 
         print("      X [G]        Y [G]        Z [G]     ")
@@ -600,7 +600,7 @@ def Get_data():
             # Check for SPACE key (or Ctrl+C handled by except KeyboardInterrupt)
             key = get_key()
             if key == ' ':
-                print("\n\nSPACE pressed → stopping...")
+                print("\n\nSPACE pressed, stopping...")
                 running = False
             elif key == '\x03':  # Ctrl+C
                 raise KeyboardInterrupt

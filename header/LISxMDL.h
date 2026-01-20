@@ -4,7 +4,7 @@
 #include <iostream>
 #include <cstdint>
 
-#define DEBUG_LIS3MDL  // Uncomment for debug output
+//#define DEBUG_LIS3MDL  // Uncomment for debug output
 
 class LISxMDL {
 public:
@@ -52,10 +52,6 @@ public:
 
     // ---------------- Constructor ----------------
     LISxMDL(FullScale range, ODR odr) {
-
-        //if (gpioInitialise() < 0) {
-        //    std::cerr << "pigpio initialisation failed." << std::endl;
-        //}
 
         handle_ = i2cOpen(1, LIS3MDL_I2C_ADDR, 0);
         if (handle_ < 0) {

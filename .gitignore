@@ -4,3 +4,4 @@ main
 lis3mdl_test
 ads1115_test
 motor_test
+build/*

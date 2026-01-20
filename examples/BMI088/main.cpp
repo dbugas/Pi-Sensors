@@ -4,10 +4,44 @@
 #include <vector>
 #include <cstring>
 #include <cmath>
+#include <atomic>
 
 #include "vqf.h"
 #include "timer.h"
 #include "BMI088.h"
+
+// ---------- interrupt handling ----------
+std::atomic<bool> gyro_drdy{false};
+std::atomic<bool> accel_drdy{false};
+const int gyro_int = 22;
+const int accel_int = 23;
+
+void gyroIntCallback(int gpio, int level, uint32_t tick)
+{
+    if (level == PI_HIGH)   // rising edge
+        gyro_drdy.store(true, std::memory_order_release);
+}
+
+void accelIntCallback(int gpio, int level, uint32_t tick)
+{
+    if (level == PI_HIGH)   // rising edge
+        accel_drdy.store(true, std::memory_order_release);
+}
+
+void setupImuInterrupts()
+{
+// Gyro INT3 → GPIO 22
+    gpioSetMode(gyro_int, PI_INPUT);
+    gpioSetPullUpDown(gyro_int, PI_PUD_OFF);   // push-pull, active high
+    gpioSetAlertFunc(gyro_int, gyroIntCallback);
+
+    // Accel INT1 → GPIO 23
+    gpioSetMode(accel_int, PI_INPUT);
+    gpioSetPullUpDown(accel_int, PI_PUD_UP);   // push-pull, active high
+    gpioSetAlertFunc(accel_int, accelIntCallback);
+}
+
+// ---------- non-interrupt handling ----------
 
 struct IMUData {
     double ax, ay, az;
@@ -27,10 +61,12 @@ int main()
 
     //BMI088 bmi(6, 800.0, BMI088::AccelOversampling::Normal, BMI088::GyroRange::DPS_1000, BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz);
     BMI088 bmi;
+    int counter = 0;
+    
+    // ---------- non-interrupt handling ----------
     imu_buffer[0] = {};
     imu_buffer[1] = {};
 
-    int counter = 0;
     std::unique_ptr<Timer> imu_timer = std::make_unique<Timer>(std::chrono::microseconds(1250));
     std::unique_ptr<Timer> print_timer = std::make_unique<Timer>(std::chrono::milliseconds(10));
 
@@ -57,10 +93,32 @@ int main()
 
     while(counter < 10)
     {
+        /*
+        // ---------- interrupt handling ----------
+        if (gyro_drdy.exchange(false))
+        {
+            double gx, gy, gz;
+            bmi.readGyro(gx, gy, gz);
+
+            std::cout << "gyro: " << gx << " " << gy << " " << gz << "\n";
+        }
+
+        if (accel_drdy.exchange(false))
+        {
+            double ax, ay, az;
+            bmi.readAccel(ax, ay, az);
+
+            std::cout << "accel: " << ax << " " << ay << " " << az << "\n";
+            counter++;
+        }
+        */
+
+        
+        // ---------- non-interrupt handling ----------
         if(print_timer->check())
         {
-            auto data = latest_imu_data.load();
-            std::cout << "time stamp " << data->timestamp_us << "\n";
+            IMUData* data = latest_imu_data.load();
+            std::cout << "" << data->timestamp_us << "\n";
             std::cout << "GX: " << data->gx  
                     << "  GY: " << data->gy  
                     << "  GZ: " << data->gz  << "\n";
@@ -69,10 +127,12 @@ int main()
                     << "  AZ: " << data->az  << "\n\n";
             counter++;
         }
+        
+       gpioDelay(50);
     }
 
     return 0;
 }
 
 // g++ -std=c++23 main.cpp vqf.cpp -lpigpio -lrt -pthread -O3 -o main
-
+// real time: sudo chrt -r 70 ./main 

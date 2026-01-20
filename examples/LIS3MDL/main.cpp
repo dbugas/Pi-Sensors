@@ -2,7 +2,7 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
-
+#include <cmath>
 #include "LISxMDL.h"
 
 int main() {
@@ -17,18 +17,19 @@ LISxMDL mag(
     );
 
     int counter = 0;
-    while(counter < 100){
+    while(true){
 
         if(mag.dataReady()){
             double mx, my, mz;
-            mag.read_gauss(mx, my, mz);
-
+            mag.readCalibrated(mx, my, mz);
+            double norm = std::sqrt(mx*mx + my*my + mz*mz);
             counter ++;
-            std::cout << "mx: " << mx << " my: " << my << " mz: " << mz << "\n"; 
+            std::cout << "mx: " << mx << " my: " << my << " mz: " << mz << " norm: " << norm << "\n"; 
         }
         std::this_thread::sleep_for(std::chrono::microseconds(500));
     }
     gpioTerminate();
     return 0;
 }
-// g++ -Wall -o main main.cpp -lpigpio -lrt -O2
+// g++ -Wall -o main main.cpp -lpigpio -lrt -O2 -ftree-vectorize
+

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <pigpio.h>
 #include <iostream>
 #include <cstdint>
@@ -5,6 +7,7 @@
 #include <cstring>
 #include <cmath>
 #include <chrono>
+#include <atomic>
 
 #define PI 3.141592653589793
 //#define DEBUG_BMI088 // Uncomment for debug output
@@ -313,8 +316,6 @@ class BMI088 {
 
         spiClose(spi_gyro);
         spiClose(spi_acc);
-
-        gpioTerminate();
     }
     private:
 
@@ -334,8 +335,13 @@ class BMI088 {
 
         //spiWrite8(spi_gyro, 0x16, 0x00);      // register 0x16: INT3_INT4_IO_CONF       
         //spiWrite8(spi_gyro, 0x18, 0x01);      // register 0x18: INT3_INT4_IO_MAP      
-        gpioDelay(5000);
+        //gpioDelay(5000);
 
+        #ifdef DEBUG_BMI088
+            std::cout << "INT_CTRL = 0x%02X\n" << spiRead8(spi_gyro, 0x15) << "\n";
+            std::cout << "INT_MAP  = 0x%02X\n" << spiRead8(spi_gyro, 0x18) << "\n";
+            std::cout << "INT_CONF = 0x%02X\n" << spiRead8(spi_gyro, 0x16) << "\n";
+        #endif
         // ───────────────────────────────────────────────────────────
     }
     void initAccelerometer(uint8_t accel_range, double accel_odr, AccelOversampling osr){
@@ -350,17 +356,17 @@ class BMI088 {
         setAccelODR_and_Filter(accel_odr, osr);
     }
 
-    double getAccelScaleFactor_g(uint8_t reg_value) {
+double getAccelScaleFactor_g(uint8_t reg_value) {
 
-        // Apply the datasheet formula using only the valid range code
-        double scale = 1.5 * (1 << (reg_value + 1)) / 32768.0;
+    // Apply the datasheet formula using only the valid range code
+    double scale = 1.5 * (1 << (reg_value + 1)) / 32768.0;
 
-        #ifdef DEBUG_BMI088
+    #ifdef DEBUG_BMI088
         std::cout << "[BMI088] Accel scale factor = " << scale << " g/LSB\n";
-        #endif
+    #endif
 
-        return scale;
-    }
+    return scale;
+}
 
     double getGyroScaleFactor(){
         uint8_t reg = spiRead8(spi_gyro, BMI088_GYR_RANGE);
@@ -425,6 +431,9 @@ class BMI088 {
         spiXfer(spi, tx, rx, 2);
         return static_cast<uint8_t>(rx[1]);
     }
+
+
+
 
     double acc_scale; // m/s
     double gyro_scale; // rad/s
