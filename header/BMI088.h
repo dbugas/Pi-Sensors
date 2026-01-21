@@ -14,13 +14,31 @@
 
 class BMI088 {
     public:
-        enum class AccelOversampling {
+        enum class AccelOversampling : uint8_t {
             OSR4   = 0x08,  // Strongest filtering (lowest bandwidth, least noise)
             OSR2   = 0x09,  // Medium filtering
             Normal = 0x0A   // Lightest filtering (highest bandwidth) – recommended for high ODR
         };
 
-            enum class GyroRange {
+        enum class AccelODR : uint8_t {
+            ODR_12_5Hz  = 0x05,
+            ODR_25Hz    = 0x06,
+            ODR_50Hz    = 0x07,
+            ODR_100Hz   = 0x08,
+            ODR_200Hz   = 0x09,
+            ODR_400Hz   = 0x0A,
+            ODR_800Hz   = 0x0B,
+            ODR_1600Hz  = 0x0C
+        };
+
+        enum class AccelRange : uint8_t {
+            G_3   = 0x00, 
+            G_6   = 0x01, 
+            G_12  = 0x02, 
+            G_24  = 0x03  
+        };
+
+        enum class GyroRange : uint8_t {
             DPS_2000 = 0x00,
             DPS_1000 = 0x01,
             DPS_500  = 0x02,
@@ -28,7 +46,7 @@ class BMI088 {
             DPS_125  = 0x04
         };
 
-        enum class GyroBandwidth {
+        enum class GyroBandwidth : uint8_t{
             ODR_2000Hz_BW_532Hz = 0x00,  
             ODR_2000Hz_BW_230Hz = 0x01,
             ODR_1000Hz_BW_116Hz = 0x02,
@@ -70,7 +88,7 @@ class BMI088 {
             }
 
             // Verify accel identity/needed for startup with spi
-            initAccelerometer(6, 800.0, BMI088::AccelOversampling::Normal);
+            initAccelerometer(BMI088::AccelRange::G_6, BMI088::AccelODR::ODR_800Hz, BMI088::AccelOversampling::Normal);
             id = readAccelChipID();
 
             #ifdef DEBUG_BMI088
@@ -85,7 +103,7 @@ class BMI088 {
                 gpioTerminate();
             }
         }
-        BMI088(uint8_t accel_range, double accel_odr, AccelOversampling accel_osr, 
+        BMI088(AccelRange accel_range, AccelODR accel_odr, AccelOversampling accel_osr, 
             GyroRange gyro_range, GyroBandwidth gyro_bandwidth){
             spi_gyro = spiOpen(CS_GYR, SPI_BAUD, SPI_FLAGS);
             if (spi_gyro < 0)
@@ -223,7 +241,7 @@ class BMI088 {
             std::cout << "BMI088 low-power mode activated.\n";
         #endif
     }
-        void wakeUp(u_int8_t accel_range, double odr, AccelOversampling osr,
+        void wakeUp(AccelRange accel_range, AccelODR odr, AccelOversampling osr,
                 GyroRange range, GyroBandwidth bandwidth) {
             #ifdef DEBUG_BMI088
                 std::cout << "Waking up BMI088...\n";
@@ -241,70 +259,78 @@ class BMI088 {
                 std::cout << "BMI088 awakened.\n";
             #endif
     }
-    void setAccelRange(uint8_t range_g) {
-        uint8_t reg_value;
+    void setAccelRange(AccelRange range) {
+        uint8_t reg_value = static_cast<uint8_t>(range); 
 
-            switch (range_g) {
-                case 3:  reg_value = 0x00; break;
-                case 6:  reg_value = 0x01; break;
-                case 12: reg_value = 0x02; break;
-                case 24: reg_value = 0x03; break;
-                default:
-                #ifdef DEBUG_BMI088
-                            std::cout << "[BMI088] Invalid accel range requested: " << int(range_g) << "g. Valid: 3,6,12,24\n";
-                #endif
-                    reg_value = 0x04;
-            }
-        
-            spiWrite8(spi_acc, BMI088_ACC_range, reg_value);  // ACC_RANGE register
-            gpioDelay(10000);  // Allow setting to take effect
-        
-        #ifdef DEBUG_BMI088
-            std::cout << "[BMI088] Accelerometer range set to +/-" << int(range_g) << "g (reg 0x41 = 0x"
-                        << std::hex << int(reg_value) << std::dec << ")\n";
-        #endif
+        spiWrite8(spi_acc, BMI088_ACC_range, reg_value);  
+        gpioDelay(10000);  // Allow setting to take effect
+
+    #ifdef DEBUG_BMI088
+        // Map back to human-readable g-value for debug print
+        int range_g;
+        switch (range) {
+            case AccelRange::G_3:  range_g = 3;   break;
+            case AccelRange::G_6:  range_g = 6;   break;
+            case AccelRange::G_12: range_g = 12;  break;
+            case AccelRange::G_24: range_g = 24;  break;
+            default:               range_g = -1;  // Should never happen with enum class
+        }
+
+        std::cout << "[BMI088] Accelerometer range set to +/-" << range_g << "g "
+                  << "(reg 0x41 = 0x" << std::hex << static_cast<int>(reg_value) << std::dec << ")\n";
+    #endif
+
         acc_scale = getAccelScaleFactor_g(reg_value);
     }
 
-    void setAccelODR_and_Filter(double odr_hz, AccelOversampling osr) {
-        // Map ODR in Hz to acc_odr bits [3:0]
-        uint8_t acc_odr;
-        if      (odr_hz == 12.5) acc_odr = 0x05;
-        else if (odr_hz == 25)   acc_odr = 0x06;
-        else if (odr_hz == 50)   acc_odr = 0x07;
-        else if (odr_hz == 100)  acc_odr = 0x08;
-        else if (odr_hz == 200)  acc_odr = 0x09;
-        else if (odr_hz == 400)  acc_odr = 0x0A;
-        else if (odr_hz == 800)  acc_odr = 0x0B;
-        else if (odr_hz == 1600) acc_odr = 0x0C;
-        else {
+    void setAccelODR_and_Filter(AccelODR odr, AccelOversampling osr) {
+        uint8_t acc_odr = static_cast<uint8_t>(odr);          // e.g. ODR_100Hz → 0x08
+        uint8_t acc_bwp = static_cast<uint8_t>(osr);          // e.g. Normal → 0x0A
+
+        uint8_t reg_value = (acc_bwp << 4) | acc_odr;         // Bits [7:4] = bwp, [3:0] = odr
+
+        spiWrite8(spi_acc, BMI088_ACC_CONF, reg_value);       // Register 0x40
+        gpioDelay(10000);                                     // Settling time
+
         #ifdef DEBUG_BMI088
-            std::cout << "[BMI088] Invalid ODR requested: " << odr_hz << " Hz\n";
-        #endif
+        // Map ODR enum back to Hz string for readable debug
+        const char* odr_str;
+        switch (odr) {
+            case AccelODR::ODR_12_5Hz:  odr_str = "12.5"; break;
+            case AccelODR::ODR_25Hz:    odr_str = "25";   break;
+            case AccelODR::ODR_50Hz:    odr_str = "50";   break;
+            case AccelODR::ODR_100Hz:   odr_str = "100";  break;
+            case AccelODR::ODR_200Hz:   odr_str = "200";  break;
+            case AccelODR::ODR_400Hz:   odr_str = "400";  break;
+            case AccelODR::ODR_800Hz:   odr_str = "800";  break;
+            case AccelODR::ODR_1600Hz:  odr_str = "1600"; break;
+            default:                    odr_str = "??";   break;  // Should never hit
         }
 
-        // acc_bwp from enum (bits [7:4])
-        uint8_t acc_bwp = static_cast<uint8_t>(osr);
-        uint8_t reg_value = (acc_bwp << 4) | acc_odr;
+        // Filter name from enum
+        const char* filter_str;
+        switch (osr) {
+            case AccelOversampling::OSR4:   filter_str = "OSR4";   break;
+            case AccelOversampling::OSR2:   filter_str = "OSR2";   break;
+            case AccelOversampling::Normal: filter_str = "Normal"; break;
+            default:                        filter_str = "??";     break;
+        }
 
-        spiWrite8(spi_acc, BMI088_ACC_CONF, reg_value);
-        gpioDelay(10000);  
-
-        #ifdef DEBUG_BMI088
-            std::cout << "[BMI088] ACC_CONF set: ODR = " << odr_hz << " Hz, "
-                   << "Filter = " << (osr == AccelOversampling::OSR4 ? "OSR4" :
-                                       osr == AccelOversampling::OSR2 ? "OSR2" : "Normal")
-                   << " (reg 0x40 = 0x" << std::hex << int(reg_value) << std::dec << ")\n";
+        std::cout << "[BMI088] ACC_CONF set: ODR = " << odr_str << " Hz, "
+                  << "Filter = " << filter_str
+                  << " (reg 0x40 = 0x" << std::hex << static_cast<int>(reg_value) << std::dec << ")\n";
         #endif
     }
 
     void setGyroRange(GyroRange range) {
-        spiWrite8(spi_gyro, BMI088_GYR_RANGE, static_cast<uint8_t>(range));
+        uint8_t val = static_cast<uint8_t>(range);
+        spiWrite8(spi_gyro, BMI088_GYR_RANGE, val);
         gpioDelay(5000);
     }
 
     void setGyroBandwidth(GyroBandwidth bw) {
-        spiWrite8(spi_gyro, BMI088_GYR_BANDWIDTH, static_cast<uint8_t>(bw));
+        uint8_t val = static_cast<uint8_t>(bw);
+        spiWrite8(spi_gyro, BMI088_GYR_BANDWIDTH, val);
         gpioDelay(5000);
     }
     ~BMI088(){
@@ -344,7 +370,7 @@ class BMI088 {
         #endif
         // ───────────────────────────────────────────────────────────
     }
-    void initAccelerometer(uint8_t accel_range, double accel_odr, AccelOversampling osr){
+    void initAccelerometer(AccelRange accel_range, AccelODR accel_odr, AccelOversampling osr){
 
         spiWrite8(spi_acc, BMI088_ACC_PWR_CTRL, 0x04); // ACC_PWR_CTRL: on
         gpioDelay(5000);
@@ -356,17 +382,17 @@ class BMI088 {
         setAccelODR_and_Filter(accel_odr, osr);
     }
 
-double getAccelScaleFactor_g(uint8_t reg_value) {
+    double getAccelScaleFactor_g(uint8_t reg_value) {
 
-    // Apply the datasheet formula using only the valid range code
-    double scale = 1.5 * (1 << (reg_value + 1)) / 32768.0;
+        // Apply the datasheet formula using only the valid range code
+        double scale = 1.5 * (1 << (reg_value + 1)) / 32768.0;
 
-    #ifdef DEBUG_BMI088
-        std::cout << "[BMI088] Accel scale factor = " << scale << " g/LSB\n";
-    #endif
+        #ifdef DEBUG_BMI088
+            std::cout << "[BMI088] Accel scale factor = " << scale << " g/LSB\n";
+        #endif
 
-    return scale;
-}
+        return scale;
+    }
 
     double getGyroScaleFactor(){
         uint8_t reg = spiRead8(spi_gyro, BMI088_GYR_RANGE);

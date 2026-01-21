@@ -41,44 +41,159 @@ struct QuatData {
 
 class IMU{
     public:
-        IMU( int pressureRate = 32, int pressureOversampling = 16,
-        int tempRate = 1, int tempOversampling = 1,
-        int accel_scale = 6, double accel_odr = 800.0,
-        BMI088::GyroRange gyro_range =  BMI088::GyroRange::DPS_1000, 
-        BMI088::GyroBandwidth gyro_bw = BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz,
-        LISxMDL::FullScale mag_scale = LISxMDL::FullScale::Gauss_8,
-        LISxMDL::ODR mag_odr = LISxMDL::ODR::Hz_80) : vqf(1e-3, 1.25e-3, 0.0125) {
+        // Performance mode controls sensor data rate, so sensor accuracy is the inverse.
+        enum class PerformanceMode {
+            Ultra,      // Fastest response (~0.3–1 ms effective rise time / very high bandwidth). For ultra-agile dynamics & vibration-heavy environments.
+            High,       // Fast response (~1–3 ms effective rise time / high bandwidth). Standard for demanding real-time tracking.
+            Medium,     // Moderate response (~5–10 ms effective rise time / medium bandwidth). Good compromise for general-purpose use.
+            Low         // Slow response (~20–50 ms effective rise time / low bandwidth). Best for low-noise, low-power, slow-changing applications.
+        };
 
-            dps310_ = std::make_unique<DPS310>(pressureRate, pressureOversampling, tempRate, tempOversampling);
-            bmi088_ = std::make_unique<BMI088>(accel_scale, accel_odr, BMI088::AccelOversampling::Normal, 
-                                                gyro_range, gyro_bw);
-            mag_ = std::make_unique<LISxMDL>(mag_scale, mag_odr);
+        IMU(PerformanceMode mode, bool use_mag, bool use_barometer){
 
-            bmi_accel_timer = std::make_unique<Timer>(std::chrono::microseconds(1250));
-            bmi_gyro_timer = std::make_unique<Timer>(std::chrono::microseconds(1000));
-            mag_timer = std::make_unique<Timer>(std::chrono::microseconds(31500));
-            dps_timer = std::make_unique<Timer>(std::chrono::milliseconds(12));
-            quat_timer = std::make_unique<Timer>(std::chrono::milliseconds(5));
+            int pressureRate;
+            int pressureOversampling;
+            int tempRate;
+            int tempOversampling;
+            BMI088::AccelRange accel_scale;
+            BMI088::AccelODR accel_odr;
+            BMI088::AccelOversampling accel_osr;
+            BMI088::GyroRange gyro_range;
+            BMI088::GyroBandwidth gyro_bw;
+            LISxMDL::FullScale mag_scale;
+            LISxMDL::ODR mag_odr;
 
-            int counter = 0;
-            double avg = 0.0;
+            // in microseconds
+            int bmi_accel_timer_val;
+            int bmi_gyro_timer_val;
+            int mag_timer_val;      
+            int dps_timer_val;      
+            int quat_timer_val;     
 
-            dps_timer->start();
-            while(counter < 10){
-               if(update_baro()) {
-                   counter ++;
-                   const BaroData* data = latest_baro();
-                   avg += data->altitude_m;
-               }
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
-           }
-            altitude0 = avg /10.0;
+            switch(mode){
+                case PerformanceMode::Ultra:
+                    accel_scale = BMI088::AccelRange::G_24;   
+                    accel_odr   = BMI088::AccelODR::ODR_1600Hz;
+                    accel_osr   = BMI088::AccelOversampling::Normal;
+                    gyro_range  = BMI088::GyroRange::DPS_2000;
+                    gyro_bw     = BMI088::GyroBandwidth::ODR_2000Hz_BW_230Hz;
+
+                    pressureRate         = 64;
+                    pressureOversampling = 8;
+                    tempRate             = 1;
+                    tempOversampling     = 1;
+
+                    mag_scale = LISxMDL::FullScale::Gauss_12;
+                    mag_odr   = LISxMDL::ODR::Hz_80;
+
+                    bmi_accel_timer_val = 625;
+                    bmi_gyro_timer_val  = 500;
+                    mag_timer_val       = 12500;
+                    dps_timer_val       = 15625;
+                    quat_timer_val      = 625;
+                    break;
+
+                case PerformanceMode::High:
+                    accel_scale = BMI088::AccelRange::G_6;   
+                    accel_odr   = BMI088::AccelODR::ODR_800Hz;
+                    accel_osr   = BMI088::AccelOversampling::Normal;
+                    gyro_range  = BMI088::GyroRange::DPS_1000;
+                    gyro_bw     = BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz;
+
+                    pressureRate         = 32;
+                    pressureOversampling = 16;
+                    tempRate             = 1;
+                    tempOversampling     = 1;
+
+                    mag_scale = LISxMDL::FullScale::Gauss_8;
+                    mag_odr   = LISxMDL::ODR::Hz_80;
+
+                    bmi_accel_timer_val = 1250;
+                    bmi_gyro_timer_val  = 1000;
+                    mag_timer_val       = 12500;
+                    dps_timer_val       = 32000;
+                    quat_timer_val      = 1000;
+                    break;
+
+                case PerformanceMode::Medium:
+                    accel_scale = BMI088::AccelRange::G_6;   
+                    accel_odr   = BMI088::AccelODR::ODR_400Hz;
+                    accel_osr   = BMI088::AccelOversampling::Normal;
+                    gyro_range  = BMI088::GyroRange::DPS_1000;
+                    gyro_bw     = BMI088::GyroBandwidth::ODR_400Hz_BW_47Hz;
+
+                    pressureRate         = 32;
+                    pressureOversampling = 16;
+                    tempRate             = 1;
+                    tempOversampling     = 1;
+
+                    mag_scale = LISxMDL::FullScale::Gauss_4;
+                    mag_odr   = LISxMDL::ODR::Hz_40;
+
+                    bmi_accel_timer_val = 2500;
+                    bmi_gyro_timer_val  = 2500;
+                    mag_timer_val       = 25000;
+                    dps_timer_val       = 32000;
+                    quat_timer_val      = 2500;
+                    break;
+
+                case PerformanceMode::Low:
+                    accel_scale = BMI088::AccelRange::G_3;   
+                    accel_odr   = BMI088::AccelODR::ODR_100Hz;
+                    accel_osr   = BMI088::AccelOversampling::OSR2;
+                    gyro_range  = BMI088::GyroRange::DPS_250;
+                    gyro_bw     = BMI088::GyroBandwidth::ODR_200Hz_BW_64Hz;
+
+                    pressureRate         = 8;
+                    pressureOversampling = 32;
+                    tempRate             = 1;
+                    tempOversampling     = 1;
+
+                    mag_scale = LISxMDL::FullScale::Gauss_4;
+                    mag_odr   = LISxMDL::ODR::Hz_20;
+
+                    bmi_accel_timer_val = 10000;
+                    bmi_gyro_timer_val  = 5000;
+                    mag_timer_val       = 50000;
+                    dps_timer_val       = 1.25e5;
+                    quat_timer_val      = 5000;
+                    break;
+            }
+
+            bmi088_ = std::make_unique<BMI088>(accel_scale, accel_odr, accel_osr, gyro_range, gyro_bw);
+            if(use_barometer) dps310_ = std::make_unique<DPS310>(pressureRate, pressureOversampling, tempRate, tempOversampling);
+            if(use_mag)       mag_    = std::make_unique<LISxMDL>(mag_scale, mag_odr);
+
+            vqf = std::make_unique<VQF>((double)bmi_gyro_timer_val*1e-6, 
+                                        (double)bmi_accel_timer_val*1e-6, 
+                                        (double)mag_timer_val*1e-6);
+            bmi_accel_timer             = std::make_unique<Timer>(std::chrono::microseconds(bmi_accel_timer_val));
+            bmi_gyro_timer              = std::make_unique<Timer>(std::chrono::microseconds(bmi_gyro_timer_val));
+            quat_timer                  = std::make_unique<Timer>(std::chrono::microseconds(quat_timer_val));
+            if(use_mag) mag_timer       = std::make_unique<Timer>(std::chrono::microseconds(mag_timer_val-100));
+            if(use_barometer) {
+                dps_timer = std::make_unique<Timer>(std::chrono::microseconds(dps_timer_val-100));
+
+                int counter = 0;
+                double avg = 0.0;
+
+                dps_timer->start();
+                while(counter < 10){
+                   if(update_baro()) {
+                       counter ++;
+                       const BaroData* data = latest_baro();
+                       avg += data->altitude_m;
+                   }
+                    std::this_thread::sleep_for(std::chrono::microseconds(10));
+                }
+                altitude0 = avg /10.0;
+            }
 
             bmi_accel_timer->start();
             std::this_thread::sleep_for(std::chrono::microseconds(500));
             bmi_gyro_timer->start();
             std::this_thread::sleep_for(std::chrono::microseconds(500));
-            mag_timer->start();
+            if(use_mag) mag_timer->start();
             quat_timer->start();
         }
 
@@ -246,19 +361,19 @@ class IMU{
                 sensor_update_thread = std::thread([this] {
                     update10DOF();
                 });
-            } catch (const std::exception& e) {
+            } catch(const std::exception& e) {
                 std::cerr << "Failed to create start_sensor_thread: " << e.what() << "\n";
                 running = false;
             }
         }
         void stop_sensor_threads() {
-            if (!running) {
+            if(!running) {
                 return;
             }
 
             running = false;
 
-            if (sensor_update_thread.joinable()) {
+            if(sensor_update_thread.joinable()) {
                 sensor_update_thread.join();
             }
             if(quat_update_thread.joinable()){
@@ -267,44 +382,44 @@ class IMU{
 
         }
 
-        void update_quat_thread(bool use_mag){
+        void update_quat_thread(){
 
-            try {
-                quat_update_thread = std::thread([this, use_mag] {
+            try{
+                quat_update_thread = std::thread([this] {
                     while(running){
 
-                        update_ori(use_mag);
-                        std::this_thread::sleep_for(std::chrono::microseconds(100));
+                        update_ori();
+                        std::this_thread::sleep_for(std::chrono::microseconds(50));
                     }
                 });
             }
-            catch (const std::exception& e) {
+            catch(const std::exception& e) {
                 std::cerr << "Failed to create update_quat_thread: " << e.what() << "\n";
             }
         }
 
         // Uses vqf to update quaternion with gyroscope, accelerometer, and optionally magnetometer data
-        void update_ori(bool use_mag){
+        void update_ori(){
 
             if(get_latest_gyro_and_consume(gydat)){
                 vqf_real_t gyro[3] = {gydat.x, gydat.y, gydat.z};
-                vqf.updateGyr(gyro);
+                vqf->updateGyr(gyro);
             }
             if(get_latest_accel_and_consume(accdat)){
                 vqf_real_t accel[3] = {accdat.x, accdat.y, accdat.z};
-                vqf.updateAcc(accel);
+                vqf->updateAcc(accel);
             }
-            if(use_mag){
+            if(mag_ != nullptr){
                 if(get_latest_mag_and_consume(magdat)){
                     vqf_real_t mag[3] = {magdat.x, magdat.y, magdat.z};
-                    vqf.updateMag(mag);
+                    vqf->updateMag(mag);
                 }
             }
             if(!quat_timer->check()) return;
 
-            if(!use_mag){
+            if(mag_ != nullptr){
                 QuatData* slot = quat_buffer_.prepare_write();
-                vqf.getQuat6D(slot->q);
+                vqf->getQuat9D(slot->q);
                 slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
                 
@@ -313,7 +428,7 @@ class IMU{
             }
             else{
                 QuatData* slot = quat_buffer_.prepare_write();
-                vqf.getQuat9D(slot->q);
+                vqf->getQuat6D(slot->q);
                 slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
                 
@@ -328,6 +443,7 @@ class IMU{
             dps310_.reset();
             bmi088_.reset();
             mag_.reset();
+            vqf.reset();
             bmi_accel_timer->stop();
             bmi_gyro_timer->stop();
             mag_timer->stop();
@@ -343,14 +459,14 @@ class IMU{
 
                 update_gyro();
                 update_accel();
-                update_mag();
-                update_baro();
+                if(mag_ != nullptr) update_mag();
+                if(dps310_ != nullptr) update_baro();
 
-                std::this_thread::sleep_for(std::chrono::microseconds(100));
+                std::this_thread::sleep_for(std::chrono::microseconds(50));
             }
         }
 
-        VQF vqf;
+        std::unique_ptr<VQF> vqf;
 
         DataBuffer<AccelData, 3> accel_buffer_;
         DataBuffer<GyroData, 3>  gyro_buffer_;
