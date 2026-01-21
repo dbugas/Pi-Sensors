@@ -115,7 +115,7 @@ public:
     }
 
     bool check() {
-        return should_fire_.exchange(false);
+        return should_fire_.exchange(false, std::memory_order_release);
     }
 
     void set(bool val) {

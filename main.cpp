@@ -28,53 +28,22 @@ int main(){
     GyroData gydat;
     AccelData accdat;
     MagData magdat;
-
-    std::cout << "start_sensor_thread()\n";
+    QuatData quat;
+  
     imu.start_sensor_thread();
-
+    imu.update_quat_thread(false);
+  
     while(counter < max_samples){
 
+        if(imu.get_latest_quat_and_consume(quat)){
 
-        if(imu.get_latest_baro_and_consume(barodat)){
             counter++;
-
-            std::cout << "[" << counter << "] "
-                      << "Timestamp: " << barodat.timestamp_us << " us\n"
-                      << "  Pressure:    " << barodat.pressure_Pa << " hPa\n"
-                      << "  Temperature: " << barodat.temperature_C << " °C\n"
-                      << "  Altitude:    " << barodat.altitude_m << " m (rel)\n"
-                      << "  ───────────────────────────────\n";
+            std::cout << " w: " << quat.q[0]  << " x: " << quat.q[1]  << " y: " << quat.q[2]  << " z: " << quat.q[3] << "\n";
         }
-       if(imu.get_latest_gyro_and_consume(gydat)){
-
-            std::cout << "Timestamp: " << gydat.timestamp_us << " us\n"
-                      << "gx: " << gydat.x << "\n"
-                      << "gy: " << gydat.y << "\n"
-                      << "gz: " << gydat.z << "\n"
-                      << "  ───────────────────────────────\n";
-       }
-       if(imu.get_latest_accel_and_consume(accdat)){
-
-           std::cout << "Timestamp: " << accdat.timestamp_us << " us\n"
-                      << "ax: " << accdat.x << "\n"
-                      << "ay: " << accdat.y << "\n"
-                      << "az: " << accdat.z << "\n"
-                      << "  ───────────────────────────────\n";
-       }
-        if(imu.get_latest_mag_and_consume(magdat)){
-
-             std::cout << "Timestamp: " << magdat.timestamp_us << " us\n"
-                       << "mx: " << magdat.x << "\n"
-                       << "my: " << magdat.y << "\n"
-                       << "mz: " << magdat.z << "\n"
-                       << "  ───────────────────────────────\n";
-        }
-        else{
-            std::cout << "No new data yet...\n";
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
 
+    imu.stop_sensor_threads();
     gpioTerminate();
 
     return 1;
