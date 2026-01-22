@@ -7,13 +7,13 @@
 
 int main(){
 
-    if (gpioInitialise() < 0) {
-        std::cerr << "pigpio initialisation failed." << std::endl;
-    }
+    //if (gpioInitialise() < 0) {
+    //    std::cerr << "pigpio initialisation failed." << std::endl;
+    //}
 
-    IMU imu(IMU::PerformanceMode::Ultra, false, false);
+    IMU imu(IMU::PerformanceMode::Ultra, true, true);
 
-    int counter = 0; const int max_samples = 50;
+    int counter = 0; const int max_samples = 5000;
     BaroData barodat;
     GyroData gydat;
     AccelData accdat;
@@ -28,14 +28,14 @@ int main(){
         if(imu.get_latest_quat_and_consume(quat)){
 
             counter++;
-            //std::cout << " w: " << quat.q[0]  << " x: " << quat.q[1]  << " y: " << quat.q[2]  << " z: " << quat.q[3] << "\n";
+            std::cout << " w: " << quat.q[0]  << " x: " << quat.q[1]  << " y: " << quat.q[2]  << " z: " << quat.q[3] << "\n";
             //std::cout << quat.timestamp_us << "\n";
         }
         std::this_thread::sleep_for(std::chrono::microseconds(50));
     }
 
     imu.stop_sensor_threads();
-    gpioTerminate();
+    //gpioTerminate();
 
     return 1;
 }

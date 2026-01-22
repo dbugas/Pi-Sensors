@@ -9,10 +9,11 @@
 #include <chrono>
 #include <atomic>
 
+#include "gpio.h"
 #define PI 3.141592653589793
 //#define DEBUG_BMI088 // Uncomment for debug output
 
-class BMI088 {
+class BMI088 : public gpio {
     public:
         enum class AccelOversampling : uint8_t {
             OSR4   = 0x08,  // Strongest filtering (lowest bandwidth, least noise)
@@ -58,13 +59,13 @@ class BMI088 {
         };
 
         BMI088(){
-            spi_gyro = spiOpen(CS_GYR, SPI_BAUD, SPI_FLAGS);
+            spi_gyro = spiOpenBus(CS_GYR, SPI_BAUD, SPI_FLAGS);
             if (spi_gyro < 0)
             {
                 std::cerr << "SPI gyro open failed\n";
                 gpioTerminate();
             }
-            spi_acc = spiOpen(CS_ACC, SPI_BAUD, SPI_FLAGS);
+            spi_acc = spiOpenBus(CS_ACC, SPI_BAUD, SPI_FLAGS);
 
             if (spi_acc < 0)
             {
@@ -82,8 +83,8 @@ class BMI088 {
             if (id != BMI088_GYR_ID)
             {
                 std::cerr << "Gyro not detected\n";
-                spiClose(spi_gyro);
-                spiClose(spi_acc);
+                spiCloseBus(spi_gyro);
+                spiCloseBus(spi_acc);
                 gpioTerminate();
             }
 
@@ -98,20 +99,20 @@ class BMI088 {
             if (id != BMI088_ACC_ID)
             {
                 std::cerr << "Accel not detected\n";
-                spiClose(spi_gyro);
-                spiClose(spi_acc);
+                spiCloseBus(spi_gyro);
+                spiCloseBus(spi_acc);
                 gpioTerminate();
             }
         }
         BMI088(AccelRange accel_range, AccelODR accel_odr, AccelOversampling accel_osr, 
             GyroRange gyro_range, GyroBandwidth gyro_bandwidth){
-            spi_gyro = spiOpen(CS_GYR, SPI_BAUD, SPI_FLAGS);
+            spi_gyro = spiOpenBus(CS_GYR, SPI_BAUD, SPI_FLAGS);
             if (spi_gyro < 0)
             {
                 std::cerr << "SPI gyro open failed\n";
                 gpioTerminate();
             }
-            spi_acc = spiOpen(CS_ACC, SPI_BAUD, SPI_FLAGS);
+            spi_acc = spiOpenBus(CS_ACC, SPI_BAUD, SPI_FLAGS);
 
             if (spi_acc < 0)
             {
@@ -129,8 +130,8 @@ class BMI088 {
             if (id != BMI088_GYR_ID)
             {
                 std::cerr << "Gyro not detected\n";
-                spiClose(spi_gyro);
-                spiClose(spi_acc);
+                spiCloseBus(spi_gyro);
+                spiCloseBus(spi_acc);
                 gpioTerminate();
             }
 
@@ -145,8 +146,8 @@ class BMI088 {
             if (id != BMI088_ACC_ID)
             {
                 std::cerr << "Accel not detected\n";
-                spiClose(spi_gyro);
-                spiClose(spi_acc);
+                spiCloseBus(spi_gyro);
+                spiCloseBus(spi_acc);
                 gpioTerminate();
             }
 
@@ -187,7 +188,7 @@ class BMI088 {
 
         tx[0] = BMI088_GYR_DATA_X_L | 0x80; // read, auto-increment
 
-        if(spiXfer(spi_gyro, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 7) != 7){
+        if(spiTransfer(spi_gyro, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 7) != 7){
             return false;
         }
 
@@ -206,7 +207,7 @@ class BMI088 {
 
         // The rest of tx can stay 0 (dummy bytes sent by master)
 
-        if (spiXfer(spi_acc, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 7) != 7)
+        if (spiTransfer(spi_acc, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 7) != 7)
         {
             return false;  // Transfer failed
         }
@@ -340,8 +341,8 @@ class BMI088 {
 
         lowPowerMode();
 
-        spiClose(spi_gyro);
-        spiClose(spi_acc);
+        spiCloseBus(spi_gyro);
+        spiCloseBus(spi_acc);
     }
     private:
 
@@ -438,7 +439,7 @@ class BMI088 {
         };
         uint8_t rx[3] = {0};
 
-        spiXfer(spi_acc, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 3);
+        spiTransfer(spi_acc, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 3);
 
         return rx[2]; // rx[1] is dummy, rx[2] is CHIP_ID
     }
@@ -454,7 +455,7 @@ class BMI088 {
         };
         char rx[2] = {0};
 
-        spiXfer(spi, tx, rx, 2);
+        spiTransfer(spi, tx, rx, 2);
         return static_cast<uint8_t>(rx[1]);
     }
 

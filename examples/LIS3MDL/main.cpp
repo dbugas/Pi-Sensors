@@ -17,7 +17,7 @@ LISxMDL mag(
     );
 
     int counter = 0;
-    while(true){
+    while(counter < 50){
 
         if(mag.dataReady()){
             double mx, my, mz;

@@ -1,12 +1,13 @@
 #pragma once
 
-#include <pigpio.h>
 #include <iostream>
 #include <cstdint>
 
-#define DEBUG_LIS3MDL  // Uncomment for debug output
+#include "gpio.h"
 
-class LISxMDL {
+//#define DEBUG_LIS3MDL  // Uncomment for debug output
+
+class LISxMDL : public gpio {
 public:
     // ---------------- ODR (CTRL_REG1 bits 7 + [4:2]) ----------------
     enum class ODR : uint8_t {
@@ -20,10 +21,11 @@ public:
         Hz_80    = 0x1C,
 
         // FAST_ODR enabled (bit 7)
-        Hz_155   = 0x80 | 0x00,
-        Hz_300   = 0x80 | 0x04,
-        Hz_560   = 0x80 | 0x08,
-        Hz_1000  = 0x80 | 0x0C
+        // Values include the specific OM (Performance Mode) bits needed for each speed:
+        Hz_1000  = 0x02 | 0x00, // Low Power (OM=00)
+        Hz_560   = 0x02 | 0x20, // Medium (OM=01)
+        Hz_300   = 0x02 | 0x40, // High (OM=10)
+        Hz_155   = 0x02 | 0x60  // Ultra-High (OM=11)
     };
 
     // ---------------- Performance Modes ----------------
@@ -53,20 +55,16 @@ public:
     // ---------------- Constructor ----------------
     LISxMDL(FullScale range, ODR odr) {
 
-        //if (gpioInitialise() < 0) {
-        //    std::cerr << "pigpio initialisation failed." << std::endl;
-        //}
-
-        handle_ = i2cOpen(1, LIS3MDL_I2C_ADDR, 0);
+        handle_ = i2cOpenBus(1, LIS3MDL_I2C_ADDR);
         if (handle_ < 0) {
             std::cerr << "[LIS3MDL] Failed to open I2C device\n";
         }
 
-        uint8_t id = i2cReadByteData(handle_, WHO_AM_I_REG);
+        uint8_t id = i2cReadByte(handle_, WHO_AM_I_REG);
         if (id != EXPECTED_WHO_AM_I) {
             std::cerr << "[LIS3MDL] Wrong WHO_AM_I: 0x"
                       << std::hex << int(id) << std::dec << "\n";
-            i2cClose(handle_);
+            i2cCloseBus(handle_);
             handle_ = -1;
         }
 
@@ -77,8 +75,8 @@ public:
     // ---------------- Destructor ----------------
     ~LISxMDL() {
         if (handle_ >= 0) {
-            i2cWriteByteData(handle_, CTRL_REG3, 0x03); // power-down
-            i2cClose(handle_);
+            i2cWriteByte(handle_, CTRL_REG3, 0x03); // power-down
+            i2cCloseBus(handle_);
         }
     }
 
@@ -126,7 +124,7 @@ public:
     }
 
     bool dataReady() const {
-        int status = i2cReadByteData(handle_, STATUS_REG);
+        int status = i2cReadByte(handle_, STATUS_REG);
         if (status < 0) {
             return false;
         }
@@ -134,46 +132,46 @@ public:
     }
 private:
     // ---------------- Initialization ----------------
-    void init(FullScale range, ODR odr) {
-        uint8_t odr_val = static_cast<uint8_t>(odr);
-        bool fast = odr_val & 0x80;
-        uint8_t odr_bits = odr_val & 0x1C;
+void init(FullScale range, ODR odr) {
+    uint8_t odr_val = static_cast<uint8_t>(odr);
+    
+    // Check if bit 1 (FAST_ODR) is set
+    bool fast = (odr_val & 0x02) != 0;
+    
+    uint8_t ctrl1 = 0;
+    uint8_t ctrl4 = 0;
 
-        PerformanceMode xy_mode = fast ? PerformanceMode::High
-                                       : PerformanceMode::UltraHigh;
+    if (fast) {
+        // In Fast Mode, we use the Enum value directly (contains OM and FAST bits)
+        ctrl1 = odr_val;
 
-        ZPerformanceMode z_mode = fast ? ZPerformanceMode::High
-                                       : ZPerformanceMode::UltraHigh;
-
-        uint8_t ctrl1 = static_cast<uint8_t>(xy_mode) | odr_bits | (fast ? 0x80 : 0x00);
-        i2cWriteByteData(handle_, CTRL_REG1, ctrl1);
-
-        i2cWriteByteData(handle_, CTRL_REG2, static_cast<uint8_t>(range));
-        i2cWriteByteData(handle_, CTRL_REG3, 0x00); // continuous
-
-        uint8_t ctrl4 = static_cast<uint8_t>(z_mode);
-        i2cWriteByteData(handle_, CTRL_REG4, ctrl4);
-
-        uint8_t ctrl5 = 0x40;
-        i2cWriteByteData(handle_, CTRL_REG5, ctrl5); // block data update
-
-        scale = getLSBperGauss();
-
-    #ifdef DEBUG_LIS3MDL
-        std::cout << "[LIS3MDL] CTRL_REG1 value: " << std::hex << int(ctrl1) << std::dec << "\n";
-        std::cout << "[LIS3MDL] CTRL_REG2 value: " << std::hex << int(static_cast<uint8_t>(range)) << std::dec << "\n";
-        std::cout << "[LIS3MDL] CTRL_REG3 value: " << std::hex << int(0x00) << std::dec << "\n";
-        std::cout << "[LIS3MDL] CTRL_REG4 value: " << std::hex << int(ctrl4) << std::dec << "\n";
-        std::cout << "[LIS3MDL] CTRL_REG5 value: " << std::hex << int(ctrl5) << std::dec << "\n";
-
-        std::cout << "[LIS3MDL] scale = " << scale << "\n";
-        std::cout << "[LIS3MDL] Initialized\n";
-    #endif
+        // Synchronize Z-axis: Extract OM bits (6:5) and shift to Z-pos (3:2)
+        uint8_t om_bits = (odr_val & 0x60);
+        ctrl4 = (om_bits >> 3); 
+    } else {
+        // Standard Mode (<= 80Hz): Default to Ultra-High Performance (0x60)
+        // and include the DO bits from the Enum
+        ctrl1 = 0x60 | odr_val; 
+        ctrl4 = 0x0C; // Z-axis Ultra-High (bits 3:2)
     }
+
+    // Write to device
+    i2cWriteByte(handle_, CTRL_REG1, ctrl1);
+    i2cWriteByte(handle_, CTRL_REG2, static_cast<uint8_t>(range));
+    i2cWriteByte(handle_, CTRL_REG3, 0x00); // Continuous mode
+    i2cWriteByte(handle_, CTRL_REG4, ctrl4);
+    i2cWriteByte(handle_, CTRL_REG5, 0x40); // Block Data Update (BDU)
+
+    scale = getLSBperGauss();
+
+#ifdef DEBUG_LIS3MDL
+    std::printf("[LIS3MDL] CTRL1: 0x%02X, CTRL4: 0x%02X\n", ctrl1, ctrl4);
+#endif
+}
 
     // ---------------- Scaling ----------------
     double getLSBperGauss() const {
-        uint8_t fs = i2cReadByteData(handle_, CTRL_REG2) & 0x60;
+        uint8_t fs = i2cReadByte(handle_, CTRL_REG2) & 0x60;
         switch (fs) {
             case 0x00: return 6842.0;
             case 0x20: return 3421.0;

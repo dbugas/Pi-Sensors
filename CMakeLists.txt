@@ -53,7 +53,7 @@ target_compile_options(${PROJECT_NAME}
     PRIVATE
         -Wall
         -Wextra
-        #-O2               # uncomment for release build
+        -O2               # uncomment for release build
         -pthread          
 )
 

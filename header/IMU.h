@@ -9,9 +9,12 @@
 #include "BMI088.h"
 #include "dps310.h"
 #include "LISxMDL.h"
+#include "PCA9685.h"
+#include "ads1115.h"
 #include "vqf.h"
 #include "timer.h"
 #include "DataBuffer.h"
+#include "gpio.h"
 
 struct AccelData {
     double x, y, z;             // m/s
@@ -35,22 +38,22 @@ struct BaroData {
     uint64_t timestamp_us = 0;
 };
 struct QuatData {
-    double q[4];              // quaternion [w, x, y, z]
+    double q[4];               // quaternion [w, x, y, z]
     uint64_t timestamp_us = 0;
 };
 
-class IMU{
+class IMU : protected gpio {
     public:
-        // Performance mode controls sensor data rate, so sensor accuracy is the inverse.
-        enum class PerformanceMode {
-            Ultra,      // Fastest response (~0.3–1 ms effective rise time / very high bandwidth). For ultra-agile dynamics & vibration-heavy environments.
-            High,       // Fast response (~1–3 ms effective rise time / high bandwidth). Standard for demanding real-time tracking.
-            Medium,     // Moderate response (~5–10 ms effective rise time / medium bandwidth). Good compromise for general-purpose use.
-            Low         // Slow response (~20–50 ms effective rise time / low bandwidth). Best for low-noise, low-power, slow-changing applications.
-        };
+    enum class PerformanceMode {
+        Ultra,      // Highest ODR + widest bandwidth (~200–500 Hz cutoff). Very low latency, captures fastest dynamics & vibrations, higher noise & power.
+        High,       // High ODR + wide bandwidth (~100–230 Hz cutoff). Excellent for most dynamic applications (drones, robotics).
+        Medium,     // Moderate ODR + bandwidth (~40–145 Hz cutoff). Balanced response for general motion, lower noise & CPU load.
+        Low         // Lowest ODR + narrowest bandwidth (~10–40 Hz cutoff) Lowest noise & power, suited for slow/static or battery-critical apps.
+    };
 
         IMU(PerformanceMode mode, bool use_mag, bool use_barometer){
 
+            init_gpio();
             int pressureRate;
             int pressureOversampling;
             int tempRate;
@@ -83,18 +86,18 @@ class IMU{
                     tempRate             = 1;
                     tempOversampling     = 1;
 
-                    mag_scale = LISxMDL::FullScale::Gauss_12;
-                    mag_odr   = LISxMDL::ODR::Hz_80;
+                    mag_scale = LISxMDL::FullScale::Gauss_8;
+                    mag_odr   = LISxMDL::ODR::Hz_155;
 
                     bmi_accel_timer_val = 625;
                     bmi_gyro_timer_val  = 500;
-                    mag_timer_val       = 12500;
+                    mag_timer_val       = 6451;
                     dps_timer_val       = 15625;
-                    quat_timer_val      = 625;
+                    quat_timer_val      = 500;
                     break;
 
                 case PerformanceMode::High:
-                    accel_scale = BMI088::AccelRange::G_6;   
+                    accel_scale = BMI088::AccelRange::G_12;   
                     accel_odr   = BMI088::AccelODR::ODR_800Hz;
                     accel_osr   = BMI088::AccelOversampling::Normal;
                     gyro_range  = BMI088::GyroRange::DPS_1000;
@@ -450,6 +453,7 @@ class IMU{
             dps_timer->stop();
             quat_timer->stop();
 
+            close_gpio();
         }
     private:
 

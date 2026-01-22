@@ -7,9 +7,10 @@
 #include <cmath>
 #include <chrono>
 
+#include "gpio.h"
 //#define DEBUG_DPS
 
-class DPS310 {
+class DPS310 : public gpio {
     private:
         int handle_;
     
@@ -237,7 +238,7 @@ class DPS310 {
     
             
             // Step 2: Open I2C connection to DPS310
-            handle_ = i2cOpen(1, 0x77, 0); // I2C bus 1, address 0x77
+            handle_ = i2cOpenBus(1, 0x77); // I2C bus 1, address 0x77
             if (handle_ < 0) {
                 gpioTerminate();
                 throw std::runtime_error("Failed to open I2C device!");
@@ -246,12 +247,12 @@ class DPS310 {
             // Step 3: Check product ID to verify sensor is responding
             char prod_id;
             if (!readRegisters(REG_PROD_ID, &prod_id, 1)) {
-                i2cClose(handle_);
+                i2cCloseBus(handle_);
                 gpioTerminate();
                 throw std::runtime_error("Failed to read product ID!");
             }
             if (prod_id != 0x10) {
-                i2cClose(handle_);
+                i2cCloseBus(handle_);
                 gpioTerminate();
                 throw std::runtime_error("Invalid product ID: 0x" + std::to_string(static_cast<int>(prod_id)) +
                                         ", expected 0x10");
@@ -262,7 +263,7 @@ class DPS310 {
             #endif
             // Step 4: Read calibration coefficients
             if (!readCalibrationCoefficients()) {
-                i2cClose(handle_);
+                i2cCloseBus(handle_);
                 gpioTerminate();
                 throw std::runtime_error("Failed to read calibration coefficients!");
             }
@@ -286,13 +287,13 @@ class DPS310 {
             uint8_t prs_cfg_value = pressure_meas_rate_bits | pressure_oversampling_bits;
             uint8_t tmp_cfg_value = temp_meas_rate_bits | temp_oversampling_bits; // Bit 7 = 0 for internal sensor
     
-            if (i2cWriteByteData(handle_, REG_PRS_CFG, prs_cfg_value) < 0) {
-                i2cClose(handle_);
+            if (i2cWriteByte(handle_, REG_PRS_CFG, prs_cfg_value) < 0) {
+                i2cCloseBus(handle_);
                 gpioTerminate();
                 throw std::runtime_error("Failed to configure pressure settings!");
             }
-            if (i2cWriteByteData(handle_, REG_TMP_CFG, tmp_cfg_value) < 0) {
-                i2cClose(handle_);
+            if (i2cWriteByte(handle_, REG_TMP_CFG, tmp_cfg_value) < 0) {
+                i2cCloseBus(handle_);
                 gpioTerminate();
                 throw std::runtime_error("Failed to configure temperature settings!");
             }
@@ -305,15 +306,15 @@ class DPS310 {
             if (temp_enable_shift) {
                 cfg_reg_value |= 0x08; // Set bit 3 (TMP_SHIFT_EN)
             }
-            if (i2cWriteByteData(handle_, REG_CFG_REG, cfg_reg_value) < 0) {
-                i2cClose(handle_);
+            if (i2cWriteByte(handle_, REG_CFG_REG, cfg_reg_value) < 0) {
+                i2cCloseBus(handle_);
                 gpioTerminate();
                 throw std::runtime_error("Failed to configure bit shifting!");
             }
     
             // Enable continuous measurement for both pressure and temperature
-            if (i2cWriteByteData(handle_, REG_MEAS_CFG, 0x07) < 0) {
-                i2cClose(handle_);
+            if (i2cWriteByte(handle_, REG_MEAS_CFG, 0x07) < 0) {
+                i2cCloseBus(handle_);
                 gpioTerminate();
                 throw std::runtime_error("Failed to enable continuous measurement!");
             }
@@ -332,7 +333,7 @@ class DPS310 {
         // Destructor (handles cleanup)
         ~DPS310() {
             if (handle_ >= 0) {
-                i2cClose(handle_);
+                i2cCloseBus(handle_);
             }
             #ifdef DEBUG_DPS
                 std::cout << "[DPS310] cleanup completed." << std::endl;
