@@ -54,24 +54,25 @@ class IMU : protected gpio {
         IMU(PerformanceMode mode, bool use_mag, bool use_barometer){
 
             init_gpio();
-            int pressureRate;
-            int pressureOversampling;
-            int tempRate;
-            int tempOversampling;
-            BMI088::AccelRange accel_scale;
-            BMI088::AccelODR accel_odr;
-            BMI088::AccelOversampling accel_osr;
-            BMI088::GyroRange gyro_range;
-            BMI088::GyroBandwidth gyro_bw;
-            LISxMDL::FullScale mag_scale;
-            LISxMDL::ODR mag_odr;
+            int pressureRate = 16;
+            int pressureOversampling = 16;
+            int tempRate = 1;
+            int tempOversampling = 1;
+            BMI088::AccelRange accel_scale = BMI088::AccelRange::G_12;
+            BMI088::AccelODR accel_odr = BMI088::AccelODR::ODR_800Hz;
+            BMI088::AccelOversampling accel_osr = BMI088::AccelOversampling::Normal;
+            BMI088::GyroRange gyro_range = BMI088::GyroRange::DPS_1000;
+            BMI088::GyroBandwidth gyro_bw = BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz;
+            LISxMDL::FullScale mag_scale  =LISxMDL::FullScale::Gauss_8;
+            LISxMDL::ODR mag_odr = LISxMDL::ODR::Hz_80;
 
             // in microseconds
-            int bmi_accel_timer_val;
-            int bmi_gyro_timer_val;
-            int mag_timer_val;      
-            int dps_timer_val;      
-            int quat_timer_val;     
+            int bmi_accel_timer_val = 1250;
+            int bmi_gyro_timer_val  = 1000;
+            int mag_timer_val       = 12500;
+            int dps_timer_val       = 32000;
+            int quat_timer_val      = 1000;    
+            delay = 50;
 
             switch(mode){
                 case PerformanceMode::Ultra:
@@ -94,6 +95,7 @@ class IMU : protected gpio {
                     mag_timer_val       = 6451;
                     dps_timer_val       = 15625;
                     quat_timer_val      = 500;
+                    delay = 50;
                     break;
 
                 case PerformanceMode::High:
@@ -116,6 +118,7 @@ class IMU : protected gpio {
                     mag_timer_val       = 12500;
                     dps_timer_val       = 32000;
                     quat_timer_val      = 1000;
+                    delay = 50;
                     break;
 
                 case PerformanceMode::Medium:
@@ -138,6 +141,7 @@ class IMU : protected gpio {
                     mag_timer_val       = 25000;
                     dps_timer_val       = 32000;
                     quat_timer_val      = 2500;
+                    delay = 250;
                     break;
 
                 case PerformanceMode::Low:
@@ -148,7 +152,7 @@ class IMU : protected gpio {
                     gyro_bw     = BMI088::GyroBandwidth::ODR_200Hz_BW_64Hz;
 
                     pressureRate         = 8;
-                    pressureOversampling = 32;
+                    pressureOversampling = 64;
                     tempRate             = 1;
                     tempOversampling     = 1;
 
@@ -160,6 +164,7 @@ class IMU : protected gpio {
                     mag_timer_val       = 50000;
                     dps_timer_val       = 1.25e5;
                     quat_timer_val      = 5000;
+                    delay = 500;
                     break;
             }
 
@@ -180,7 +185,7 @@ class IMU : protected gpio {
                 int counter = 0;
                 double avg = 0.0;
 
-                dps_timer->start();
+                dps_timer->start(true);
                 while(counter < 10){
                    if(update_baro()) {
                        counter ++;
@@ -192,12 +197,12 @@ class IMU : protected gpio {
                 altitude0 = avg /10.0;
             }
 
-            bmi_accel_timer->start();
+            bmi_accel_timer->start(true);
             std::this_thread::sleep_for(std::chrono::microseconds(500));
-            bmi_gyro_timer->start();
+            bmi_gyro_timer->start(true);
             std::this_thread::sleep_for(std::chrono::microseconds(500));
-            if(use_mag) mag_timer->start();
-            quat_timer->start();
+            if(use_mag) mag_timer->start(true);
+            quat_timer->start(true);
         }
 
         bool update_accel() {
@@ -251,6 +256,26 @@ class IMU : protected gpio {
             
             return false;
         }
+
+        bool update_mag_raw() {
+            if(!mag_timer->check()) return false;
+
+            if (mag_->dataReady()){
+                MagData* slot = mag_buffer_.prepare_write();
+                if (mag_->read_gauss(slot->x, slot->y, slot->z)) {
+                    slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count();
+
+                    mag_buffer_.commit();
+                    has_new_mag_.store(true, std::memory_order_release);
+                    return true;
+                }
+            }
+            else mag_timer->set(true);
+            
+            return false;
+        }
+
         bool update_baro() {
             if(!dps_timer->check()) return false;
 
@@ -282,7 +307,6 @@ class IMU : protected gpio {
         // All these are lock-free and very fast
 
         const AccelData* latest_accel() const noexcept {
-
             return accel_buffer_.get_latest();
         }
 
@@ -385,24 +409,36 @@ class IMU : protected gpio {
 
         }
 
-        void update_quat_thread(){
-
-            try{
+        void update_quat_thread() {
+            try {
                 quat_update_thread = std::thread([this] {
-                    while(running){
+                    // Set real-time priority for this thread specifically
 
-                        update_ori();
-                        std::this_thread::sleep_for(std::chrono::microseconds(50));
+                    #ifdef __linux__
+                        pin_thread_to_core(3);
+                        sched_param param{};
+                        param.sched_priority = 99; 
+                        pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+                    #endif
+                
+                    //bool wait_type = delay <= 100;
+                    //const auto interval = std::chrono::microseconds(delay);
+                    //auto next_deadline = std::chrono::steady_clock::now() + interval;
+                
+                    while (running) {
+                        update_quat();
+                    
+                        //if(wait_type) hybrid_wait(next_deadline, interval);
+                        std::this_thread::sleep_for(std::chrono::microseconds(delay));
                     }
                 });
-            }
-            catch(const std::exception& e) {
+            } catch (const std::exception& e) {
                 std::cerr << "Failed to create update_quat_thread: " << e.what() << "\n";
             }
         }
 
         // Uses vqf to update quaternion with gyroscope, accelerometer, and optionally magnetometer data
-        void update_ori(){
+        void update_quat(){
 
             if(get_latest_gyro_and_consume(gydat)){
                 vqf_real_t gyro[3] = {gydat.x, gydat.y, gydat.z};
@@ -440,6 +476,14 @@ class IMU : protected gpio {
             }
         }
 
+        void update_imu(){
+
+            update_gyro();
+            update_accel();
+            if (mag_ != nullptr) update_mag();
+            if (dps310_ != nullptr) update_baro();
+        }
+
         ~IMU(){
 
             stop_sensor_threads();
@@ -457,19 +501,54 @@ class IMU : protected gpio {
         }
     private:
 
-        //  read all sensors in the imu until running = false
-        void update10DOF(){
-            while(running){
+    void pin_thread_to_core(int core_id) {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(core_id, &cpuset);
 
-                update_gyro();
-                update_accel();
-                if(mag_ != nullptr) update_mag();
-                if(dps310_ != nullptr) update_baro();
+        pthread_t current_thread = pthread_self();
+        if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0) {
+            std::cerr << "Error pinning thread to core " << core_id << "\n";
+        }
+    }
 
-                std::this_thread::sleep_for(std::chrono::microseconds(50));
-            }
+    void hybrid_wait(std::chrono::steady_clock::time_point& next_deadline, 
+                     std::chrono::microseconds interval) {
+
+        // Spin Phase
+        while (std::chrono::steady_clock::now() < next_deadline) {
+            asm volatile("yield");
         }
 
+        // Update deadline
+        next_deadline += interval;
+
+        auto post_now = std::chrono::steady_clock::now();
+        if (post_now > next_deadline + std::chrono::microseconds(50)) {
+            next_deadline = post_now + interval;
+        }
+    }
+
+        //  read all sensors in the imu until running = false
+    void update10DOF() {
+        // interval calculated from your microsecond delay
+        //const auto interval = std::chrono::microseconds(delay);
+        //auto next_deadline = std::chrono::steady_clock::now() + interval;
+
+        #ifdef __linux__
+            pin_thread_to_core(2);
+            sched_param param{};
+            param.sched_priority = 99; 
+            pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+        #endif
+
+        //bool wait_type = delay <= 100;
+        while (running) {
+            update_imu();
+            //if(wait_type) hybrid_wait(next_deadline, interval);
+            std::this_thread::sleep_for(std::chrono::microseconds(delay));
+        }
+    }
         std::unique_ptr<VQF> vqf;
 
         DataBuffer<AccelData, 3> accel_buffer_;
@@ -497,6 +576,7 @@ class IMU : protected gpio {
         std::atomic<bool> has_new_mag_{false};
         std::atomic<bool> has_new_baro_{false};
         std::atomic<bool> has_new_quat_{false};
+        int delay = 50;
 
         // dps310 values
         bool ispressureRDY = false;

@@ -109,7 +109,6 @@ public:
     {
         double rx, ry, rz;
         if (!read_gauss(rx, ry, rz)) return false;
-        //std::cout << "raw_mx: " << mx << " raw_my: " << my << " raw_mz: " << mz << " ";
 
         double dx = rx - hardIronOffset[0];
         double dy = ry - hardIronOffset[1];
@@ -127,7 +126,7 @@ public:
         if (status < 0) {
             return false;
         }
-        return status & 0x08; // ZYXDA
+        return status & 0x08;
     }
 private:
     // ---------------- Initialization ----------------
@@ -182,7 +181,7 @@ void init(FullScale range, ODR odr) {
 
     void initCalibrationMatrix()
     {
-        // R matrix (row-major order)
+        // R matrix
         constexpr double R[3][3] = {
             {-0.63130273, 0.09122449, 0.77015255},
             {-0.76346217, 0.10144869, -0.63783515},

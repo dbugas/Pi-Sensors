@@ -59,7 +59,7 @@ public:
         #ifdef __linux__
             if (use_real_time_priority) {
                 sched_param param{};
-                param.sched_priority = 20;
+                param.sched_priority = 30;
                 if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
                     std::cout << "Warning: Failed to set real-time priority\n";
                 }
@@ -123,7 +123,7 @@ public:
     }
     double get_elapsed_time(TimeUnit unit = TimeUnit::Microseconds) {
         auto now = std::chrono::steady_clock::now();
-        auto elapsed = now - last_time_;
+        auto elapsed = now - last_time_.load();
         last_time_ = now;
 
         switch (unit) {
@@ -161,5 +161,5 @@ private:
     std::atomic<bool> should_fire_;
     std::atomic<std::shared_ptr<Callback>> callback_{nullptr};
     std::thread timer_thread_;
-    std::chrono::steady_clock::time_point last_time_;
+    std::atomic<std::chrono::steady_clock::time_point> last_time_;
 };
