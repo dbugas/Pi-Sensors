@@ -15,6 +15,7 @@
 #include "timer.h"
 #include "DataBuffer.h"
 #include "gpio.h"
+#include "srKF.h"
 
 struct AccelData {
     double x, y, z;             // m/s
@@ -35,6 +36,7 @@ struct BaroData {
     double pressure_Pa;
     double temperature_C;
     double altitude_m;         // relative to reference
+    double vertical_speed_mps;
     uint64_t timestamp_us = 0;
 };
 struct QuatData {
@@ -94,7 +96,7 @@ class IMU : protected gpio {
                     bmi_gyro_timer_val  = 500;
                     mag_timer_val       = 6451;
                     dps_timer_val       = 15625;
-                    quat_timer_val      = 500;
+                    quat_timer_val      = 1000;
                     delay = 50;
                     break;
 
@@ -187,14 +189,31 @@ class IMU : protected gpio {
 
                 dps_timer->start(true);
                 while(counter < 10){
-                   if(update_baro()) {
-                       counter ++;
-                       const BaroData* data = latest_baro();
-                       avg += data->altitude_m;
-                   }
-                    std::this_thread::sleep_for(std::chrono::microseconds(10));
+                    if (dps310_->isMeasurementReady(ispressureRDY, istempRDY)){
+                            double pressure_Pa=0.0;
+                            double temperature_C=0.0;
+                            double altitude_m=0.0;
+                            bool ok = dps310_->readData(pressure_Pa, temperature_C,
+                                                        istempRDY, ispressureRDY);
+                            if(ok){
+                                dps310_->calculateAltitudeChange(pressure_Pa, temperature_C,
+                                                    altitude_m, altitude_change);
+                                avg += altitude_m;
+                                counter++;
+                            }
+                    }
+                    std::this_thread::sleep_for(std::chrono::microseconds(5000));
                 }
                 altitude0 = avg /10.0;
+
+                EKF = std::make_unique<srKF>(
+                    Eigen::Matrix4d{{1,0,0,0}, {0,1,0,0}, {0,0,0.5,0}, {0,0,0,0.05}},
+                    Eigen::Matrix<double,1,1>{{10.0}},
+                    compute_process_noise_approx((double)bmi_accel_timer_val*1e-6, 0.01, 0.0001),
+                    Eigen::Vector4d{altitude0,0,0,0.01},
+                    (double)bmi_accel_timer_val*1e-6
+                );
+
             }
 
             bmi_accel_timer->start(true);
@@ -203,9 +222,10 @@ class IMU : protected gpio {
             std::this_thread::sleep_for(std::chrono::microseconds(500));
             if(use_mag) mag_timer->start(true);
             quat_timer->start(true);
+
         }
 
-        bool update_accel() {
+        bool update_accel_raw() {
             if (!bmi_accel_timer->check()) return false;
 
             AccelData* slot = accel_buffer_.prepare_write();
@@ -217,6 +237,37 @@ class IMU : protected gpio {
                 accel_buffer_.commit();
                 has_new_accel_.store(true, std::memory_order_release);
 
+                return true;
+            }
+            return false;
+        }
+
+        bool update_accel() {
+            if (!bmi_accel_timer->check()) return false;
+
+            AccelData* slot = accel_buffer_.prepare_write();
+
+            if (bmi088_->readAccelCalibrated(slot->x, slot->y, slot->z)) {
+                slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+
+                accel_buffer_.commit();
+                has_new_accel_.store(true, std::memory_order_release);
+                
+                if(dps310_){
+                    // Update EKF with new accel data
+                    const QuatData* quat = latest_quat();
+                    Eigen::Quaterniond q(quat->q[0], quat->q[1], quat->q[2], quat->q[3]);
+                    Eigen::Vector3d a(slot->x, slot->y, slot->z);
+                    a = q * a; 
+                    EKF->KF_predict_alt((a(2) - 1.0)*9.80665); // use Z linear accel in world frame
+
+                    BaroData* baro_slot = baro_buffer_.prepare_write();
+                    baro_slot->altitude_m = EKF->xhat(0) - altitude0;  
+                    baro_slot->vertical_speed_mps = EKF->xhat(1);
+                    baro_buffer_.commit();
+                    has_new_baro_.store(true, std::memory_order_release);
+                }
                 return true;
             }
             return false;
@@ -287,9 +338,11 @@ class IMU : protected gpio {
                                             istempRDY, ispressureRDY);
 
                 if (ok) {
-                    dps310_->calculateAltitudeChange(slot->pressure_Pa, slot->temperature_C,
-                                                    slot->altitude_m, altitude_change);
-                    slot->altitude_m -= altitude0;  // relative altitude
+                    EKF->KF_update_alt(Eigen::VectorXd::Constant(1, slot->pressure_Pa), slot->temperature_C + 273.15);
+                    EKF->SageHusa_update_alt();
+                    //dps310_->calculateAltitudeChange(slot->pressure_Pa, slot->temperature_C,
+                    //                                slot->altitude_m, altitude_change);
+                    //std::cout << "altitude EKF: " << EKF->xhat(0) << " m" << " Vertical Vel: " << EKF->xhat(1) << " m/s" << " accel: " << EKF->xhat(2) << " m/s²" << " Accel Bias: " << EKF->xhat(3) << " m/s²\n";
                     slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                         std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -319,6 +372,9 @@ class IMU : protected gpio {
         }
         const BaroData* latest_baro() const noexcept {
             return baro_buffer_.get_latest();
+        }
+        const QuatData* latest_quat() const noexcept {
+            return quat_buffer_.get_latest();
         }
         bool get_latest_accel_and_consume(AccelData& out) noexcept {
             if (!has_new_accel_.exchange(false, std::memory_order_acq_rel)) {
@@ -427,7 +483,9 @@ class IMU : protected gpio {
                 
                     while (running) {
                         update_quat();
-                    
+                        //if(vqf->getRestDetected()){
+                        //    altitude0 = EKF->xhat(0);
+                        //}
                         //if(wait_type) hybrid_wait(next_deadline, interval);
                         std::this_thread::sleep_for(std::chrono::microseconds(delay));
                     }
@@ -465,7 +523,7 @@ class IMU : protected gpio {
                 quat_buffer_.commit();
                 has_new_quat_.store(true, std::memory_order_release);
             }
-            else{
+            else { 
                 QuatData* slot = quat_buffer_.prepare_write();
                 vqf->getQuat6D(slot->q);
                 slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -549,12 +607,43 @@ class IMU : protected gpio {
             std::this_thread::sleep_for(std::chrono::microseconds(delay));
         }
     }
+
+    Eigen::Matrix4d compute_process_noise_approx(double dt, double q_accel, double q_bias) {
+        Eigen::Matrix4d Q = Eigen::Matrix4d::Zero();
+
+        if (dt <= 0.0) {
+            return Q;  // avoid negative / zero dt issues
+        }
+
+        const double dt2 = dt * dt;
+        const double dt3 = dt2 * dt;
+        const double dt4 = dt3 * dt;
+        const double dt5 = dt4 * dt;
+
+        Q(0, 0) = (dt4 / 20.0 * q_accel + dt * q_bias)*250.0;
+        Q(0, 1) = (dt3 / 8.0 * q_accel + dt * q_bias) * 10.0;
+        Q(0, 2) = (dt2 / 6.0 * q_accel + dt * q_bias) * 10.0;
+
+        Q(1, 0) = Q(0, 1);
+        Q(1, 1) = (dt2 / 3.0 * q_accel + dt * q_bias) * 10.0;
+        Q(1, 2) = (dt / 2.0 * q_accel + dt * q_bias) * 10.0;
+
+        Q(2, 0) = Q(0, 2);
+        Q(2, 1) = Q(1, 2);
+        Q(2, 2) = dt * q_accel;
+
+        Q(3, 3) =  q_bias;
+
+        return Q;
+    }
+
         std::unique_ptr<VQF> vqf;
+        std::unique_ptr<srKF> EKF;
 
         DataBuffer<AccelData, 3> accel_buffer_;
         DataBuffer<GyroData, 3>  gyro_buffer_;
-        DataBuffer<MagData, 3>   mag_buffer_;
-        DataBuffer<BaroData, 3>  baro_buffer_;
+        DataBuffer<MagData, 2>   mag_buffer_;
+        DataBuffer<BaroData, 2>  baro_buffer_;
         DataBuffer<QuatData, 3>  quat_buffer_;
 
         AccelData accdat;

@@ -193,17 +193,27 @@ void init(FullScale range, ODR odr) {
                                          {0.0, 2.13826103, 0.0},
                                          {0.0, 0.0, 2.05586751}};
 
+        double temp[3][3] = {0};
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                temp[i][j] = 0.0;
+                for (int k = 0; k < 3; ++k) {
+                    temp[i][j] += S_diag[i][k] * R[j][k];  
+                }
+            }
+        }
+
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 3; ++j) {
                 calibMatrix[i][j] = 0.0;
                 for (int k = 0; k < 3; ++k) {
-                    calibMatrix[i][j] += S_diag[i][k] * R[j][k];  
+                    calibMatrix[i][j] += R[i][k]*temp[k][j];  
                 }
             }
         }
 
         #ifdef DEBUG_LIS3MDL
-        std::cout << "[LIS3MDL] Calibration matrix (S*R^T):\n";
+        std::cout << "[LIS3MDL] Calibration matrix (R*S*R^T):\n";
         for (int i = 0; i < 3; ++i) {
             std::cout << "  ";
             for (int j = 0; j < 3; ++j) {

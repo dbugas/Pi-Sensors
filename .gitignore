@@ -1,5 +1,6 @@
 .venv
 *.so
+*.csv
 main
 lis3mdl_test
 ads1115_test

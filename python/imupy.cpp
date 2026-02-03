@@ -117,6 +117,9 @@ PYBIND11_MODULE(imupy, m) {
         .def("update_mag_raw", [](IMU &self) {
             self.update_mag_raw();
         })
+        .def("update_accel_raw", [](IMU &self) {
+            self.update_accel_raw();
+        })
         .def("update_imu", [](IMU &self) {
             self.update_imu();
         });

@@ -48,7 +48,7 @@ class DPS310 : public gpio {
         bool readRegisters(uint8_t reg, char* buffer, int length) {
             int result = i2cReadI2CBlockData(handle_, reg, buffer, length);
             if (result < 0) {
-                std::cerr << "Failed to read registers starting at 0x" << std::hex << (int)reg << std::endl;
+                std::cerr << "[DPS310]Failed to read registers starting at 0x" << std::hex << (int)reg << std::endl;
                 return false;
             }
             return true;
@@ -106,7 +106,7 @@ class DPS310 : public gpio {
                 case 64:  return 8;
                 case 128: return 4;
                 default:
-                    throw std::invalid_argument("Invalid oversampling rate! Must be 1, 2, 4, 8, 16, 32, 64, or 128.");
+                    throw std::invalid_argument("[DPS310] Invalid oversampling rate! Must be 1, 2, 4, 8, 16, 32, 64, or 128.");
             }
         }
     
@@ -122,7 +122,7 @@ class DPS310 : public gpio {
                 case 64:  return 104.4;
                 case 128: return 206.8;
                 default:
-                    throw std::invalid_argument("Invalid oversampling rate! Must be 1, 2, 4, 8, 16, 32, 64, or 128.");
+                    throw std::invalid_argument("[DPS310] Invalid oversampling rate! Must be 1, 2, 4, 8, 16, 32, 64, or 128.");
             }
         }
     
@@ -135,7 +135,7 @@ class DPS310 : public gpio {
     
             if (pressure_measurement_rate > max_pressure_rate) {
             throw std::invalid_argument(
-                "Pressure measurement rate " + std::to_string(pressure_measurement_rate) +
+                "[DPS310] Pressure measurement rate " + std::to_string(pressure_measurement_rate) +
                 " Hz exceeds maximum allowed rate of " + std::to_string(max_pressure_rate) +
                 " Hz for oversampling rate " + std::to_string(pressure_oversampling_rate) + "x (Table 17)."
             );
@@ -143,7 +143,7 @@ class DPS310 : public gpio {
     
             if (temp_measurement_rate > max_temp_rate) {
             throw std::invalid_argument(
-                "Temperature measurement rate " + std::to_string(temp_measurement_rate) +
+                "[DPS310] Temperature measurement rate " + std::to_string(temp_measurement_rate) +
                 " Hz exceeds maximum allowed rate of " + std::to_string(max_temp_rate) +
                 " Hz for oversampling rate " + std::to_string(temp_oversampling_rate) + "x (Table 17)."
             );
@@ -179,7 +179,7 @@ class DPS310 : public gpio {
             // Constraint: Total time for all measurements in 1 second must be <= 1000 ms
             if (total_time > 1000.0) {
                 throw std::invalid_argument(
-                    "Invalid combination of measurement rates and oversampling rates.\n"
+                    "[DPS310] Invalid combination of measurement rates and oversampling rates.\n"
                     "Pressure: Rate = " + std::to_string(pressure_measurement_rate) +
                     " Hz, Oversampling = " + std::to_string(pressure_oversampling_rate) +
                     "x, Total Time = " + std::to_string(pressure_total_time) + " ms\n" +
@@ -206,7 +206,7 @@ class DPS310 : public gpio {
                 case 64: return 0x60; // 110
                 case 128: return 0x70; // 111
                 default:
-                    throw std::invalid_argument("Invalid measurement rate! Must be 1, 2, 4, 8, 16, 32, 64, or 128 Hz.");
+                    throw std::invalid_argument("[DPS310] Invalid measurement rate! Must be 1, 2, 4, 8, 16, 32, 64, or 128 Hz.");
             }
         }
     
@@ -222,7 +222,7 @@ class DPS310 : public gpio {
                 case 64:  scale_factor = 1040384; enable_shift = true;  return 0x06; // 110
                 case 128: scale_factor = 2088960; enable_shift = true;  return 0x07; // 111
                 default:
-                    throw std::invalid_argument("Invalid oversampling rate! Must be 1, 2, 4, 8, 16, 32, 64, or 128.");
+                    throw std::invalid_argument("[DPS310] Invalid oversampling rate! Must be 1, 2, 4, 8, 16, 32, 64, or 128.");
             }
         }
     
@@ -241,7 +241,7 @@ class DPS310 : public gpio {
             handle_ = i2cOpenBus(1, 0x77); // I2C bus 1, address 0x77
             if (handle_ < 0) {
                 gpioTerminate();
-                throw std::runtime_error("Failed to open I2C device!");
+                throw std::runtime_error("[DPS310] Failed to open I2C device!");
             }
     
             // Step 3: Check product ID to verify sensor is responding
@@ -249,23 +249,23 @@ class DPS310 : public gpio {
             if (!readRegisters(REG_PROD_ID, &prod_id, 1)) {
                 i2cCloseBus(handle_);
                 gpioTerminate();
-                throw std::runtime_error("Failed to read product ID!");
+                throw std::runtime_error("[DPS310] Failed to read product ID!");
             }
             if (prod_id != 0x10) {
                 i2cCloseBus(handle_);
                 gpioTerminate();
-                throw std::runtime_error("Invalid product ID: 0x" + std::to_string(static_cast<int>(prod_id)) +
+                throw std::runtime_error("[DPS310] Invalid product ID: 0x" + std::to_string(static_cast<int>(prod_id)) +
                                         ", expected 0x10");
             }
             #ifdef DEBUG_DPS
-                std::cout << "Product ID verified: 0x" << std::hex << static_cast<int>(prod_id) << std::endl;
+                std::cout << "[DPS310] Product ID verified: 0x" << std::hex << static_cast<int>(prod_id) << std::endl;
                 std::cout << std::dec; // Reset to decimal
             #endif
             // Step 4: Read calibration coefficients
             if (!readCalibrationCoefficients()) {
                 i2cCloseBus(handle_);
                 gpioTerminate();
-                throw std::runtime_error("Failed to read calibration coefficients!");
+                throw std::runtime_error("[DPS310] Failed to read calibration coefficients!");
             }
     
             // Step 5: Configure the DPS310 with specified measurement and oversampling rates
@@ -290,12 +290,12 @@ class DPS310 : public gpio {
             if (i2cWriteByte(handle_, REG_PRS_CFG, prs_cfg_value) < 0) {
                 i2cCloseBus(handle_);
                 gpioTerminate();
-                throw std::runtime_error("Failed to configure pressure settings!");
+                throw std::runtime_error("[DPS310] Failed to configure pressure settings!");
             }
             if (i2cWriteByte(handle_, REG_TMP_CFG, tmp_cfg_value) < 0) {
                 i2cCloseBus(handle_);
                 gpioTerminate();
-                throw std::runtime_error("Failed to configure temperature settings!");
+                throw std::runtime_error("[DPS310] Failed to configure temperature settings!");
             }
     
             // Configure bit shifting based on oversampling rates
@@ -309,14 +309,14 @@ class DPS310 : public gpio {
             if (i2cWriteByte(handle_, REG_CFG_REG, cfg_reg_value) < 0) {
                 i2cCloseBus(handle_);
                 gpioTerminate();
-                throw std::runtime_error("Failed to configure bit shifting!");
+                throw std::runtime_error("[DPS310] Failed to configure bit shifting!");
             }
     
             // Enable continuous measurement for both pressure and temperature
             if (i2cWriteByte(handle_, REG_MEAS_CFG, 0x07) < 0) {
                 i2cCloseBus(handle_);
                 gpioTerminate();
-                throw std::runtime_error("Failed to enable continuous measurement!");
+                throw std::runtime_error("[DPS310] Failed to enable continuous measurement!");
             }
     
             // Step 6: Wait for sensor to stabilize
@@ -344,7 +344,7 @@ class DPS310 : public gpio {
         bool  isMeasurementReady(bool& pressure_ready, bool& temp_ready) {
             char meas_cfg;
             if (!readRegisters(REG_MEAS_CFG, &meas_cfg, 1)) {
-                std::cerr << "Failed to read measurement configuration register!" << std::endl;
+                std::cerr << "[DPS310] Failed to read measurement configuration register!" << std::endl;
                 return false;
             }
     
@@ -366,7 +366,7 @@ class DPS310 : public gpio {
             if (temp_ready) {
                 char temp_data_raw[3];
                 if (i2cReadI2CBlockData(handle_, REG_TMP_B2, temp_data_raw, 3) < 0) {
-                    std::cerr << "Failed to read temp data!\n";
+                    std::cerr << "[DPS310] Failed to read temp data!\n";
                 } else {
                     uint8_t d[3] = {static_cast<uint8_t>(temp_data_raw[0]),
                                     static_cast<uint8_t>(temp_data_raw[1]),
@@ -389,7 +389,7 @@ class DPS310 : public gpio {
                 // Read 3 bytes of pressure data
                 char pressure_data_raw[3];
                 if (i2cReadI2CBlockData(handle_, REG_PSR_B2, pressure_data_raw, 3) < 0) {
-                    std::cerr << "Failed to read pressure data!" << std::endl;
+                    std::cerr << "[DPS310] Failed to read pressure data!" << std::endl;
                     return false;
                 }
                 // Safely cast each byte to uint8_t for bitwise work
@@ -430,7 +430,7 @@ class DPS310 : public gpio {
     
             // Check for valid temperature and pressure
             if (T <= 0.0 || pressure <= 0.0) {
-                std::cerr << "Invalid temperature (" << temperature << " °C) or pressure (" << pressure << " Pa) for altitude calculation!" << std::endl;
+                std::cerr << "[DPS310]Invalid temperature (" << temperature << " °C) or pressure (" << pressure << " Pa) for altitude calculation!" << std::endl;
                 return false;
             }
     

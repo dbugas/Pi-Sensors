@@ -76,7 +76,7 @@ int main()
         IMUData* new_sample = (current == &imu_buffer[0]) ? &imu_buffer[1] : &imu_buffer[0];
 
         // Read raw data
-        bool ok = bmi.readAccel(new_sample->ax, new_sample->ay, new_sample->az) &&
+        bool ok = bmi.readAccelCalibrated(new_sample->ax, new_sample->ay, new_sample->az) &&
                   bmi.readGyro(new_sample->gx, new_sample->gy, new_sample->gz);
 
         if(ok) {
@@ -117,14 +117,14 @@ int main()
         // ---------- non-interrupt handling ----------
         if(print_timer->check())
         {
-            IMUData* data = latest_imu_data.load();
-            std::cout << "" << data->timestamp_us << "\n";
-            std::cout << "GX: " << data->gx  
-                    << "  GY: " << data->gy  
-                    << "  GZ: " << data->gz  << "\n";
-            std::cout << "AX: " << data->ax 
-                    << "  AY: " << data->ay
-                    << "  AZ: " << data->az  << "\n\n";
+            //IMUData* data = latest_imu_data.load();
+            //std::cout << "" << data->timestamp_us << "\n";
+            //std::cout << "GX: " << data->gx  
+            //        << "  GY: " << data->gy  
+            //        << "  GZ: " << data->gz  << "\n";
+            //std::cout << "AX: " << data->ax 
+            //        << "  AY: " << data->ay
+            //        << "  AZ: " << data->az  << "\n\n";
             counter++;
         }
         

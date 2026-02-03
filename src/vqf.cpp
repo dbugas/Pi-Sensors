@@ -15,10 +15,9 @@
 
 inline vqf_real_t square(vqf_real_t x) { return x*x; }
 
-
 VQFParams::VQFParams()
-    : tauAcc(3.0)
-    , tauMag(9.0)
+    : tauAcc(0.1)
+    , tauMag(4.0)
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
     , motionBiasEstEnabled(true)
 #endif

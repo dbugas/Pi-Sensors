@@ -14,6 +14,8 @@ import imupy
 import daepso  
 
 """
+Magnetometer:
+
 R = 
 -0.63130273 0.09122449 0.77015255
 -0.76346217 0.10144869 -0.63783515
@@ -28,14 +30,30 @@ x0 = 0.03628057
      0.02168861
      0.15742409
 
+Accelerometer:
+
+R =
+0.71255252 -0.13878161 0.68775619
+-0.69090930 0.03182244 0.72224073
+0.12211981 0.98981160 0.07321034
+
+S = 
+1.10766793 0.00000000 0.00000000
+0.00000000 1.00533049 0.00000000
+0.00000000 0.00000000 0.87716575
+
+x0 = 0.00474523
+     0.01032585
+     -0.05219814
 """
 # =============================================
 # Configuration
 # =============================================
-GENERATE_RANDOM_ELLIPSOID = True     # use real time data. 
+GENERATE_RANDOM_ELLIPSOID = False     # use real time data. 
 SAVE_DATA = False                     # save real time data
-LOAD_DATA = False                     # Load real time data
-filepath = ""                         # path for loading data
+LOAD_DATA = True                     # Load real time data
+filepath = "acc_xyz.csv"              # path for loading data
+FileName = "acc_xyz1.csv"              # file name for saved data
 GET_MAGNETOMETER_DATA = False         # use magnetometer for real time data
 GET_ACCELEROMETER_DATA = True         # use accelerometer for real time data
 if(not GENERATE_RANDOM_ELLIPSOID):
@@ -93,7 +111,7 @@ def main():
             points = Get_data(imu, GET_MAGNETOMETER_DATA, GET_ACCELEROMETER_DATA)
             if(SAVE_DATA):
                 np.savetxt(
-                    "mag_xyz.csv",
+                    FileName,
                     points,
                     delimiter=',',
                     header='X_gauss,Y_gauss,Z_gauss',
@@ -394,7 +412,7 @@ def print_results(params, coeffs, lambda_orig, lambda_fit,
         print(f"  Original: a={a:.4f}  b={b:.4f}  c={c:.4f}")
         print(f"  Fitted:   a={a_fit:.4f}  b={b_fit:.4f}  c={c_fit:.4f}\n")
         print("\n" + "═"*30)
-        print("\nUnit transformation: S*R^T*([points] - x0)\n")
+        print("\nUnit transformation: R*S*R^T*([points] - x0)\n")
         print("═"*30)
         print("Rotation original R = ")
         for row in V:
@@ -428,7 +446,7 @@ def print_results(params, coeffs, lambda_orig, lambda_fit,
         print(f"Semi-axes: a={a_fit:.4f}  b={b_fit:.4f}  c={c_fit:.4f}")
 
         print("\n" + "═"*30)
-        print("\nUnit transformation: S*R^T*([points] - x0)\n")
+        print("\nUnit transformation: R*S*R^T*([points] - x0)\n")
         print("═"*30)
         print("\nRotation fitted R =")
         for row in V_fit:
@@ -519,7 +537,7 @@ def transform_to_sphere(points, x0, V, a, b, c):
     for i in range(points.shape[1]):
         q = points[:, i] - x0
         r = R_inv @ q
-        sphere_pts[:, i] = S_inv @ r
+        sphere_pts[:, i] = V @ S_inv @ r
 
     return sphere_pts
 
@@ -644,6 +662,10 @@ def Get_data(imu, GET_MAGNETOMETER_DATA, GET_ACCELEROMETER_DATA):
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
         print("Terminal restored")
     return np.array(data).T
+
+# =============================================
+# Helper functions
+# =============================================
 
 def key_pressed():
     i, _, _ = select.select([sys.stdin], [], [], 0.0)

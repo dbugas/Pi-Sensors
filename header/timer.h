@@ -65,10 +65,11 @@ public:
                 }
             }
         #endif
-            auto next_time = std::chrono::steady_clock::now() + interval_;
+            next_time = std::chrono::steady_clock::now() + interval_;
 
             while (running_) {
-                std::this_thread::sleep_until(next_time);
+                auto next_time_temp = next_time.load(std::memory_order_acquire);
+                std::this_thread::sleep_until(next_time_temp);
                 if (!running_) break;
 
                 should_fire_ = true;
@@ -90,11 +91,12 @@ public:
 
                 // Drift correction
                 auto now = std::chrono::steady_clock::now();
-                while (next_time + interval_ <= now) {
-                    next_time += interval_;
+                while (next_time_temp + interval_ <= now) {
+                    next_time_temp += interval_;
                 }
 
-                next_time += interval_;
+                next_time_temp += interval_;
+                next_time.store(next_time_temp, std::memory_order_release);
             }
         });
     }
@@ -120,11 +122,14 @@ public:
 
     void set(bool val) {
         should_fire_.store(val, std::memory_order_release);
+        auto next_time_temp = std::chrono::steady_clock::now() + interval_;
+        next_time.store(next_time_temp, std::memory_order_release);
     }
+
     double get_elapsed_time(TimeUnit unit = TimeUnit::Microseconds) {
         auto now = std::chrono::steady_clock::now();
-        auto elapsed = now - last_time_.load();
-        last_time_ = now;
+        auto elapsed = now - last_time_.load(std::memory_order_acquire);
+        last_time_.store(now, std::memory_order_release);
 
         switch (unit) {
             case TimeUnit::Seconds:
@@ -162,4 +167,5 @@ private:
     std::atomic<std::shared_ptr<Callback>> callback_{nullptr};
     std::thread timer_thread_;
     std::atomic<std::chrono::steady_clock::time_point> last_time_;
+    std::atomic<std::chrono::steady_clock::time_point> next_time;
 };
