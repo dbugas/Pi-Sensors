@@ -360,6 +360,10 @@ class IMU : protected gpio {
                         std::chrono::steady_clock::now().time_since_epoch()).count();
 
                     baro_buffer_.commit();
+
+                    if(vqf->getRestDetected()){
+                            altitude0 = EKF->xhat(0);
+                    }
                     has_new_baro_.store(true, std::memory_order_release);
 
                     return true;
@@ -497,9 +501,7 @@ class IMU : protected gpio {
                 
                     while (running) {
                         update_quat();
-                        if(vqf->getRestDetected()){
-                            altitude0 = EKF->xhat(0);
-                        }
+
                         //if(wait_type) hybrid_wait(next_deadline, interval);
                         std::this_thread::sleep_for(std::chrono::microseconds(delay));
                     }
@@ -517,7 +519,7 @@ class IMU : protected gpio {
                 vqf->updateGyr(gyro);
             }
             if(get_latest_accel_and_consume(accdat)){
-                vqf_real_t accel[3] = {accdat.x, accdat.y, accdat.z};
+                vqf_real_t accel[3] = {accdat.x*9.80665, accdat.y*9.80665, accdat.z*9.80665};
                 vqf->updateAcc(accel);
             }
             if(mag_ != nullptr){
@@ -559,14 +561,14 @@ class IMU : protected gpio {
         ~IMU(){
 
             stop_sensor_threads();
-            dps310_.reset();
+            if(dps310_) dps310_.reset();
             bmi088_.reset();
-            mag_.reset();
+            if(mag_) mag_.reset();
             vqf.reset();
             bmi_accel_timer->stop();
             bmi_gyro_timer->stop();
-            mag_timer->stop();
-            dps_timer->stop();
+            if(mag_) mag_timer->stop();
+            if(dps310_) dps_timer->stop();
             quat_timer->stop();
 
             close_gpio();
@@ -632,7 +634,6 @@ class IMU : protected gpio {
         const double dt2 = dt * dt;
         const double dt3 = dt2 * dt;
         const double dt4 = dt3 * dt;
-        const double dt5 = dt4 * dt;
 
         Q(0, 0) = (dt4 / 20.0 * q_accel + dt * q_bias)*250.0;
         Q(0, 1) = (dt3 / 8.0 * q_accel + dt * q_bias) * 10.0;

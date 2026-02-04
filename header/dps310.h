@@ -48,7 +48,7 @@ class DPS310 : public gpio {
         bool readRegisters(uint8_t reg, char* buffer, int length) {
             int result = i2cReadI2CBlockData(handle_, reg, buffer, length);
             if (result < 0) {
-                std::cerr << "[DPS310]Failed to read registers starting at 0x" << std::hex << (int)reg << std::endl;
+                std::cerr << "[DPS310] Failed to read registers starting at 0x" << std::hex << (int)reg << std::endl;
                 return false;
             }
             return true;
@@ -375,8 +375,6 @@ class DPS310 : public gpio {
                     raw = twosComplement(raw, 24);
                     
                     double Traw_sc = static_cast<double>(raw) / temp_scale_factor_;
-                    
-                    // This is the missing line!
                     last_temperature_ = static_cast<float>(coeffs_.c0 * 0.5 + coeffs_.c1 * Traw_sc) + 27.0;
                     
                     t_raw = Traw_sc;
@@ -403,7 +401,6 @@ class DPS310 : public gpio {
                 (static_cast<int32_t>(pres_data[2]));
                 raw_pressure = twosComplement(raw_pressure, 24);
 
-                 // Apply scaling and compensation
                 double p_raw = static_cast<double>(raw_pressure) / pressure_scale_factor_;
 
                 pressure = static_cast<double>(coeffs_.c00) +
