@@ -95,7 +95,7 @@ class IMU : protected gpio {
                     bmi_accel_timer_val = 625;
                     bmi_gyro_timer_val  = 500;
                     mag_timer_val       = 6451;
-                    dps_timer_val       = 15625;
+                    dps_timer_val       = 14100;
                     quat_timer_val      = 1000;
                     delay = 50;
                     break;
@@ -118,7 +118,7 @@ class IMU : protected gpio {
                     bmi_accel_timer_val = 1250;
                     bmi_gyro_timer_val  = 1000;
                     mag_timer_val       = 12500;
-                    dps_timer_val       = 32000;
+                    dps_timer_val       = 27600;
                     quat_timer_val      = 1000;
                     delay = 50;
                     break;
@@ -141,7 +141,7 @@ class IMU : protected gpio {
                     bmi_accel_timer_val = 2500;
                     bmi_gyro_timer_val  = 2500;
                     mag_timer_val       = 25000;
-                    dps_timer_val       = 32000;
+                    dps_timer_val       = 27600;
                     quat_timer_val      = 2500;
                     delay = 250;
                     break;
@@ -164,7 +164,7 @@ class IMU : protected gpio {
                     bmi_accel_timer_val = 10000;
                     bmi_gyro_timer_val  = 5000;
                     mag_timer_val       = 50000;
-                    dps_timer_val       = 1.25e5;
+                    dps_timer_val       = 1011000;
                     quat_timer_val      = 5000;
                     delay = 500;
                     break;
@@ -177,22 +177,27 @@ class IMU : protected gpio {
             vqf = std::make_unique<VQF>((double)bmi_gyro_timer_val*1e-6, 
                                         (double)bmi_accel_timer_val*1e-6, 
                                         (double)mag_timer_val*1e-6);
-            bmi_accel_timer             = std::make_unique<Timer>(std::chrono::microseconds(bmi_accel_timer_val));
-            bmi_gyro_timer              = std::make_unique<Timer>(std::chrono::microseconds(bmi_gyro_timer_val));
-            quat_timer                  = std::make_unique<Timer>(std::chrono::microseconds(quat_timer_val));
-            if(use_mag) mag_timer       = std::make_unique<Timer>(std::chrono::microseconds(mag_timer_val-100));
+            bmi_accel_timer       = std::make_unique<Timer>(std::chrono::microseconds(bmi_accel_timer_val));
+            bmi_gyro_timer        = std::make_unique<Timer>(std::chrono::microseconds(bmi_gyro_timer_val));
+            quat_timer            = std::make_unique<Timer>(std::chrono::microseconds(quat_timer_val));
+            if(use_mag) mag_timer = std::make_unique<Timer>(std::chrono::microseconds(mag_timer_val));
             if(use_barometer) {
-                dps_timer = std::make_unique<Timer>(std::chrono::microseconds(dps_timer_val-100));
+                dps_timer = std::make_unique<Timer>(std::chrono::microseconds(dps_timer_val));
 
                 int counter = 0;
+                int timeout = 0;
                 double avg = 0.0;
 
                 dps_timer->start(true);
                 while(counter < 10){
+                    if(!dps_timer->check()) {
+                        timeout += 5000;
+                        continue;
+                    }
                     if (dps310_->isMeasurementReady(ispressureRDY, istempRDY)){
-                            double pressure_Pa=0.0;
-                            double temperature_C=0.0;
-                            double altitude_m=0.0;
+                            double pressure_Pa = 0.0;
+                            double temperature_C = 0.0;
+                            double altitude_m = 0.0;
                             bool ok = dps310_->readData(pressure_Pa, temperature_C,
                                                         istempRDY, ispressureRDY);
                             if(ok){
@@ -202,12 +207,21 @@ class IMU : protected gpio {
                                 counter++;
                             }
                     }
+                    else dps_timer->set(true);
+                    
+                    if(timeout > dps_timer_val*2000000){
+                        std::cout << "DPS310 setup failed \n";
+                        dps_timer->stop();
+                        dps310_.reset();
+                        break;
+                    }
+                    
                     std::this_thread::sleep_for(std::chrono::microseconds(5000));
                 }
                 altitude0 = avg /10.0;
 
                 EKF = std::make_unique<srKF>(
-                    Eigen::Matrix4d{{1,0,0,0}, {0,1,0,0}, {0,0,0.5,0}, {0,0,0,0.05}},
+                    Eigen::Matrix4d{{1,0,0,0}, {0,0.5,0,0}, {0,0,0.1,0}, {0,0,0,0.05}},
                     Eigen::Matrix<double,1,1>{{10.0}},
                     compute_process_noise_approx((double)bmi_accel_timer_val*1e-6, 0.01, 0.0001),
                     Eigen::Vector4d{altitude0,0,0,0.01},
@@ -222,7 +236,6 @@ class IMU : protected gpio {
             std::this_thread::sleep_for(std::chrono::microseconds(500));
             if(use_mag) mag_timer->start(true);
             quat_timer->start(true);
-
         }
 
         bool update_accel_raw() {
@@ -348,6 +361,7 @@ class IMU : protected gpio {
 
                     baro_buffer_.commit();
                     has_new_baro_.store(true, std::memory_order_release);
+
                     return true;
                 }
             }
@@ -483,9 +497,9 @@ class IMU : protected gpio {
                 
                     while (running) {
                         update_quat();
-                        //if(vqf->getRestDetected()){
-                        //    altitude0 = EKF->xhat(0);
-                        //}
+                        if(vqf->getRestDetected()){
+                            altitude0 = EKF->xhat(0);
+                        }
                         //if(wait_type) hybrid_wait(next_deadline, interval);
                         std::this_thread::sleep_for(std::chrono::microseconds(delay));
                     }

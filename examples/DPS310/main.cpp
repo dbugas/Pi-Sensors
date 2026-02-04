@@ -16,8 +16,8 @@ int main() {
         }
         bool temp_ready, pressure_ready = false;
         // Test case : Pressure at 64 Hz, 8x oversampling; Temperature at 4 Hz, 1x oversampling
-        int pressure_meas_rate1 = 32; //13.13 // 6.96 // 2.18
-        int pressure_os_rate1 = 16;
+        int pressure_meas_rate1 = 8; //13.13 // 6.96 // 2.18
+        int pressure_os_rate1 = 64;
         int temp_meas_rate1 = 1;
         int temp_os_rate1 = 1;
 

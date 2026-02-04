@@ -86,6 +86,6 @@ void srKF::SageHusa_update_alt()
     sigmaV = d_R * sigmaV + (1.0 - d_R) * (post_residual_cov - Chat * sigmaX * Chat.transpose());
     //sigmaW = d_W * sigmaW + (1.0 - d_W) * (L * post_residual_cov * L.transpose() + sigmaX - Ahat * sigmaX * Ahat.transpose());
 
-	//std::cout << "Updated sigmaW: \n" << sigmaW << "\n\n";
+	//std::cout << "Updated sigmaV: \n" << sigmaV << "\n";
 
 }
