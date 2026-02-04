@@ -191,7 +191,6 @@ class IMU : protected gpio {
                 dps_timer->start(true);
                 while(counter < 10){
                     if(!dps_timer->check()) {
-                        timeout += 5000;
                         continue;
                     }
                     if (dps310_->isMeasurementReady(ispressureRDY, istempRDY)){
@@ -206,10 +205,11 @@ class IMU : protected gpio {
                                 avg += altitude_m;
                                 counter++;
                             }
+                            else timeout++;
                     }
                     else dps_timer->set(true);
                     
-                    if(timeout > dps_timer_val*2000000){
+                    if(timeout > 100){
                         std::cout << "DPS310 setup failed \n";
                         dps_timer->stop();
                         dps310_.reset();
