@@ -31,14 +31,14 @@ try:
         gy_a += float(gy)
         gz_a += float(gz) 
 
-        #print(f"Accel: ({ax:.5f}, {ay:.5f}, {az:.5f}) m/s^2")
-        #print(f"Gyro:  ({gx:.5f}, {gy:.5f}, {gz:.5f}) rad/s")
-        #print(f"Mag:   ({mx:.5f}, {my:.5f}, {mz:.5f}) (unitless)")
-        #print(f"Baro:  {pressure:.5f} Pa, {temp:.5f} C, {altitude:.5f} m")
+        print(f"Accel: ({ax*9.806:.5f}, {ay*9.806:.5f}, {az*9.806:.5f}) m/s^2")
+        print(f"Gyro:  ({gx:.5f}, {gy:.5f}, {gz:.5f}) rad/s")
+        print(f"Mag:   ({mx:.5f}, {my:.5f}, {mz:.5f}) (unitless)")
+        print(f"Baro:  {pressure:.5f} Pa, {temp:.5f} C, {altitude:.5f} m")
         print(f"Quat:  w= {qw:.3f}, x= {qx:.3f}, y= {qy:.3f}, z= {qz:.3f}")
         print("-" * 40)
 
-        time.sleep(0.5)
+        time.sleep(0.25)
 finally:
     print(f"average gx: {gx_a/num:.8f}, gy: {gy_a/num:.8f}, gz: {gz_a/num:.8f}")
     print("Finished reading IMU data")

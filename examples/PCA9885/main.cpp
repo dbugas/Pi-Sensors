@@ -9,9 +9,9 @@ int main() {
     std::cout << "enter begin\n";
     pwm.begin();
     std::cout << "enter setOscillatorFrequency\n";
-    pwm.setOscillatorFrequency(6000000);
+    pwm.setOscillatorFrequency(25500000);
     std::cout << "enter setPWMFreq\n";
-    pwm.setPWMFreq(400.0);
+    pwm.setPWMFreq(500.0);
     //pwm.setOutputMode(true);
     
     int i = 0;

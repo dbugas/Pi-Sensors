@@ -8,25 +8,30 @@
 // Constructor
 PCA9685::PCA9685(uint8_t i2c_bus, uint8_t addr) : i2c_bus_(i2c_bus), i2c_addr_(addr) {
     // Validate I2C bus and address
-
-    // Open I2C device
-    i2c_handle_ = i2cOpenBus(i2c_bus, i2c_addr_);
-    if (i2c_handle_ < 0) {
-        gpioTerminate();
-        throw std::runtime_error("Failed to open I2C device at address 0x" + 
-                                std::to_string(i2c_addr_));
-    }
-
     if (i2c_bus > 1) {
         throw std::runtime_error("Invalid I2C bus: " + std::to_string(i2c_bus));
     }
     if (addr < 0x40 || addr > 0x7F) {
         throw std::runtime_error("Invalid I2C address: 0x" + std::to_string(addr));
     }
-    #ifdef ENABLE_DEBUG_OUTPUT
-        std::cout << "PCA9685 initialized at address 0x" << std::hex << static_cast<int>(i2c_addr_)
-                  << std::dec << std::endl;
-    #endif
+
+    // Initialize pigpio
+    if (gpioInitialise() < 0) {
+        throw std::runtime_error("Failed to initialize pigpio");
+    }
+
+    // Open I2C device
+    i2c_handle_ = i2cOpen(i2c_bus, i2c_addr_, 0);
+    if (i2c_handle_ < 0) {
+        gpioTerminate();
+        throw std::runtime_error("Failed to open I2C device at address 0x" + 
+                                std::to_string(i2c_addr_));
+    }
+
+#ifdef ENABLE_DEBUG_OUTPUT
+    std::cout << "PCA9685 initialized at address 0x" << std::hex << static_cast<int>(i2c_addr_)
+              << std::dec << std::endl;
+#endif
 }
 
 // Destructor
@@ -36,17 +41,16 @@ PCA9685::~PCA9685() {
     } catch (...) {
         // Ignore errors during cleanup
     }
-    i2cCloseBus(i2c_handle_);
+    i2cClose(i2c_handle_);
     gpioTerminate();
 
-    #ifdef ENABLE_DEBUG_OUTPUT
-        std::cout << "PCA9685 destructor called" << std::endl;
-    #endif
+#ifdef ENABLE_DEBUG_OUTPUT
+    std::cout << "PCA9685 destructor called" << std::endl;
+#endif
 }
 
 // Initialize the PCA9685
 bool PCA9685::begin(uint8_t prescale) {
-    reset();
     setOscillatorFrequency(FREQUENCY_OSCILLATOR);
     if (prescale) {
         setExtClk(prescale);
@@ -57,27 +61,27 @@ bool PCA9685::begin(uint8_t prescale) {
     write8(PCA9685_MODE1, MODE1_AI);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    std::cout << "After begin, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After begin, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
     return true;
 }
 
-
 // Send a reset command to the PCA9685
 void PCA9685::reset() {
-    /*
     // Open general call address (0x00) for software reset
-    int general_call_handle = i2cOpenBus(i2c_bus_, 0x00);
+    int general_call_handle = i2cOpen(i2c_bus_, 0x00, 0);
     if (general_call_handle < 0) {
         throw std::runtime_error("Failed to open I2C general call address 0x00");
     }
 
     // Send software reset command (0x06) to general call address
     if (i2cWriteByte(general_call_handle, 0x06) < 0) {
-        i2cCloseBus(general_call_handle);
+        i2cClose(general_call_handle);
         throw std::runtime_error("Failed to send software reset command");
     }
-    i2cCloseBus(general_call_handle);
+    i2cClose(general_call_handle);
 
     // Wait for reset to complete
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -97,11 +101,11 @@ void PCA9685::reset() {
     write8(PCA9685_MODE1, 0x00);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    std::cout << "After clearing MODE1, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
-    */
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After clearing MODE1, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
-
 
 // Put PCA9685 into sleep mode
 void PCA9685::sleep() {
@@ -110,8 +114,10 @@ void PCA9685::sleep() {
     write8(PCA9685_MODE1, sleep);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    std::cout << "After sleep, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After sleep, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
 
 // Wake PCA9685 from sleep
@@ -120,8 +126,10 @@ void PCA9685::wakeup() {
     uint8_t wakeup = (sleep & ~MODE1_SLEEP) | MODE1_AI; // Ensure AI is on
     write8(PCA9685_MODE1, wakeup);
 
-    std::cout << "After wakeup, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After wakeup, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
 
 // Set external clock
@@ -134,8 +142,10 @@ void PCA9685::setExtClk(uint8_t prescale) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     write8(PCA9685_MODE1, (newmode & ~MODE1_SLEEP) | MODE1_AI); // Wake with AI
 
-    std::cout << "After setExtClk, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After setExtClk, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
 
 // Set PWM frequency
@@ -159,8 +169,9 @@ void PCA9685::setPWMFreq(float freq) {
     }
     uint8_t prescale = static_cast<uint8_t>(prescaleval);
 
-    std::cout << "Final pre-scale: " << static_cast<int>(prescale) << std::endl;
-
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "Final pre-scale: " << static_cast<int>(prescale) << std::endl;
+    #endif
     uint8_t oldmode = read8(PCA9685_MODE1);
     uint8_t newmode = (oldmode & ~(MODE1_RESTART | MODE1_EXTCLK)) | MODE1_SLEEP;
     write8(PCA9685_MODE1, newmode); // Go to sleep
@@ -168,8 +179,10 @@ void PCA9685::setPWMFreq(float freq) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     write8(PCA9685_MODE1, MODE1_AI); // Wake with only AI bit set
 
-    std::cout << "After setPWMFreq, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After setPWMFreq, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
 
 // Set output mode (totem pole or open drain)
@@ -218,7 +231,7 @@ uint8_t PCA9685::setPWM(uint8_t num, uint16_t on, uint16_t off) {
         static_cast<uint8_t>(off >> 8)
     };
 
-    if (i2cWriteBlock(i2c_handle_, reg, reinterpret_cast<char *>(buffer), 4) < 0) {
+    if (i2cWriteI2CBlockData(i2c_handle_, reg, reinterpret_cast<char *>(buffer), 4) < 0) {
         throw std::runtime_error("Failed to set PWM for channel " + std::to_string(num));
     }
     return 0;
@@ -249,7 +262,7 @@ void PCA9685::setPWMMultiple(uint8_t start_num, uint8_t count, const uint16_t* o
         p += 4;
     }
 
-    if (i2cWriteBlock(i2c_handle_, reg, reinterpret_cast<char*>(buffer), count * 4) < 0)
+    if (i2cWriteI2CBlockData(i2c_handle_, reg, reinterpret_cast<char*>(buffer), count * 4) < 0)
     {
         throw std::runtime_error("PCA9685 I2C write failed");
     }
@@ -321,7 +334,7 @@ uint32_t PCA9685::getOscillatorFrequency() {
 
 // Low-level I2C read
 uint8_t PCA9685::read8(uint8_t addr) {
-    int value = i2cReadByte(i2c_handle_, addr);
+    int value = i2cReadByteData(i2c_handle_, addr);
     if (value < 0) {
         throw std::runtime_error("Failed to read from register 0x" + std::to_string(addr));
     }
@@ -330,7 +343,7 @@ uint8_t PCA9685::read8(uint8_t addr) {
 
 // Low-level I2C write
 void PCA9685::write8(uint8_t addr, uint8_t data) {
-    if (i2cWriteByte(i2c_handle_, addr, data) < 0) {
+    if (i2cWriteByteData(i2c_handle_, addr, data) < 0) {
         throw std::runtime_error("Failed to write to register 0x" + std::to_string(addr));
     }
 }

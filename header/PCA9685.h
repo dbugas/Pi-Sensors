@@ -1,10 +1,10 @@
-#pragma once
+#ifndef _PCA9685_H
+#define _PCA9685_H
 
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
 
-#include "gpio.h"
 // REGISTER ADDRESSES
 #define PCA9685_MODE1 0x00      /**< Mode Register 1 */
 #define PCA9685_MODE2 0x01      /**< Mode Register 2 */
@@ -35,7 +35,8 @@
 #define MODE1_RESTART 0x80 /**< Restart enabled */
 // MODE2 bits
 #define MODE2_OUTNE_0 0x01 /**< Active LOW output enable input */
-#define MODE2_OUTNE_1 0x02 /**< Active LOW output enable input - high impedience */
+#define MODE2_OUTNE_1                                                          \
+  0x02 /**< Active LOW output enable input - high impedience */
 #define MODE2_OUTDRV 0x04 /**< totem pole structure vs open-drain */
 #define MODE2_OCH 0x08    /**< Outputs change on ACK vs STOP */
 #define MODE2_INVRT 0x10  /**< Output logic state inverted */
@@ -48,7 +49,7 @@
 
 //#define ENABLE_DEBUG_OUTPUT // Uncomment to enable debug output
 
-class PCA9685 : public gpio {
+class PCA9685 {
 public:
     PCA9685(uint8_t i2c_bus = 1, uint8_t addr = PCA9685_I2C_ADDRESS);
     ~PCA9685();
@@ -77,3 +78,5 @@ private:
     uint8_t read8(uint8_t addr);
     void write8(uint8_t addr, uint8_t data);
 };
+
+#endif

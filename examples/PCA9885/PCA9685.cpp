@@ -51,7 +51,6 @@ PCA9685::~PCA9685() {
 
 // Initialize the PCA9685
 bool PCA9685::begin(uint8_t prescale) {
-    reset();
     setOscillatorFrequency(FREQUENCY_OSCILLATOR);
     if (prescale) {
         setExtClk(prescale);
@@ -62,8 +61,10 @@ bool PCA9685::begin(uint8_t prescale) {
     write8(PCA9685_MODE1, MODE1_AI);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    std::cout << "After begin, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After begin, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
     return true;
 }
 
@@ -100,8 +101,10 @@ void PCA9685::reset() {
     write8(PCA9685_MODE1, 0x00);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    std::cout << "After clearing MODE1, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After clearing MODE1, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
 
 // Put PCA9685 into sleep mode
@@ -111,8 +114,10 @@ void PCA9685::sleep() {
     write8(PCA9685_MODE1, sleep);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    std::cout << "After sleep, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After sleep, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
 
 // Wake PCA9685 from sleep
@@ -121,8 +126,10 @@ void PCA9685::wakeup() {
     uint8_t wakeup = (sleep & ~MODE1_SLEEP) | MODE1_AI; // Ensure AI is on
     write8(PCA9685_MODE1, wakeup);
 
-    std::cout << "After wakeup, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After wakeup, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
 
 // Set external clock
@@ -135,8 +142,10 @@ void PCA9685::setExtClk(uint8_t prescale) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     write8(PCA9685_MODE1, (newmode & ~MODE1_SLEEP) | MODE1_AI); // Wake with AI
 
-    std::cout << "After setExtClk, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After setExtClk, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
 
 // Set PWM frequency
@@ -160,8 +169,9 @@ void PCA9685::setPWMFreq(float freq) {
     }
     uint8_t prescale = static_cast<uint8_t>(prescaleval);
 
-    std::cout << "Final pre-scale: " << static_cast<int>(prescale) << std::endl;
-
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "Final pre-scale: " << static_cast<int>(prescale) << std::endl;
+    #endif
     uint8_t oldmode = read8(PCA9685_MODE1);
     uint8_t newmode = (oldmode & ~(MODE1_RESTART | MODE1_EXTCLK)) | MODE1_SLEEP;
     write8(PCA9685_MODE1, newmode); // Go to sleep
@@ -169,8 +179,10 @@ void PCA9685::setPWMFreq(float freq) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     write8(PCA9685_MODE1, MODE1_AI); // Wake with only AI bit set
 
-    std::cout << "After setPWMFreq, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
-              << std::dec << std::endl;
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "After setPWMFreq, MODE1 = 0x" << std::hex << static_cast<int>(read8(PCA9685_MODE1))
+                  << std::dec << std::endl;
+    #endif
 }
 
 // Set output mode (totem pole or open drain)

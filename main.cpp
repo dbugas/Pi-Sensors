@@ -31,7 +31,7 @@ int main(){
             Eigen::Vector3d acc_vec(accdatptr->x, accdatptr->y, accdatptr->z);
             Eigen::Vector3d rotated_acc = q * acc_vec;
             if(print_timer->check()){
-                //std::cout << " x: " << rotated_acc.x()  << " y: " << rotated_acc.y()  << " z: " << rotated_acc.z()  << "\n";
+                std::cout << " x: " << rotated_acc.x()  << " y: " << rotated_acc.y()  << " z: " << rotated_acc.z()  << "\n";
                 //std::cout << " x: " << accdatptr->x  << " y: " << accdatptr->y  << " z: " << accdatptr->z  << "\n\n";
                 //std::cout << " w: " << quat.q[0]  << " x: " << quat.q[1]  << " y: " << quat.q[2]  << " z: " << quat.q[3] << "\n";
                 //std::cout << quat.timestamp_us << "\n";
