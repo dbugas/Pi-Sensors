@@ -6,9 +6,8 @@ from scipy.spatial.transform import Rotation as R
 # Choose a performance mode (Ultra, High, Medium, Low)
 imu = imupy.IMU(imupy.PerformanceMode.High, Use_Mag=True, Use_Barometer=True)
 
-# Start the background sensor thread (runs continuously)
+# Start the background sensor thread (runs continuously, and auto stops or may call stop_sensor_thread())
 imu.start_sensor_thread()
-imu.update_quat_thread()
 
 # ------------------ Read Data Loop ------------------
 gx_a= 0.0

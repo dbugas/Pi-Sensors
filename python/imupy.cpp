@@ -72,14 +72,9 @@ PYBIND11_MODULE(imupy, m) {
             py::gil_scoped_release release;
             self.start_sensor_thread();
         })
-        .def("stop_sensor_threads", [](IMU &self) {
+        .def("stop_sensor_thread", [](IMU &self) {
             py::gil_scoped_release release;
-            self.stop_sensor_threads();
-        })
-
-        .def("update_quat_thread", [](IMU &self) {
-            py::gil_scoped_release release;
-            self.update_quat_thread();
+            self.stop_sensor_thread();
         })
 
         .def("Accel_raw", [](IMU &self) {
@@ -110,9 +105,6 @@ PYBIND11_MODULE(imupy, m) {
             QuatData q;
             self.get_latest_quat_and_consume(q);
             return Quaternion::from_quat_data(q);
-        })
-        .def("update_quat", [](IMU &self) {
-            self.update_quat();
         })
         .def("update_mag_raw", [](IMU &self) {
             self.update_mag_raw();

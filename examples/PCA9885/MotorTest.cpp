@@ -28,7 +28,7 @@ int main() {
     //pwm.setOutputMode(true);
     
     int i = 0;
-    int pwm_val[16] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0}; 
+    int pwm_val[16] = {2000,2000,2000,2000, 0,0,0,0, 0,0,0,0, 0,0,0,0}; 
     int channel = 0;
     int sign = 1;
     uint16_t on_vals[16] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};      // Example: all start at count 0

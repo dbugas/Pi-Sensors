@@ -16,7 +16,7 @@
 inline vqf_real_t square(vqf_real_t x) { return x*x; }
 
 VQFParams::VQFParams()
-    : tauAcc(0.1)
+    : tauAcc(3.0)
     , tauMag(4.0)
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
     , motionBiasEstEnabled(true)
@@ -24,17 +24,17 @@ VQFParams::VQFParams()
     , restBiasEstEnabled(true)
     , magDistRejectionEnabled(true)
     , biasSigmaInit(0.5)
-    , biasForgettingTime(100.0)
+    , biasForgettingTime(200.0)
     , biasClip(2.0)
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
-    , biasSigmaMotion(0.1)
+    , biasSigmaMotion(0.07)
     , biasVerticalForgettingFactor(0.0001)
 #endif
     , biasSigmaRest(0.03)
     , restMinT(1.5)
     , restFilterTau(0.5)
-    , restThGyr(2.0)
-    , restThAcc(0.5)
+    , restThGyr(0.6)
+    , restThAcc(0.25)
     , magCurrentTau(0.05)
     , magRefTau(20.0)
     , magNormTh(0.1)
@@ -95,8 +95,8 @@ void VQF::updateGyr(const vqf_real_t gyr[3])
     vqf_real_t gyrNorm = norm(gyrNoBias, 3);
     vqf_real_t angle = gyrNorm * coeffs.gyrTs;
     if (gyrNorm > EPS) {
-        vqf_real_t c = cos(angle/2);
-        vqf_real_t s = sin(angle/2)/gyrNorm;
+        vqf_real_t c = cos(angle/2.0);
+        vqf_real_t s = sin(angle/2.0)/gyrNorm;
         vqf_real_t gyrStepQuat[4] = {c, s*gyrNoBias[0], s*gyrNoBias[1], s*gyrNoBias[2]};
         quatMultiply(state.gyrQuat, gyrStepQuat, state.gyrQuat);
         normalize(state.gyrQuat, 4);
@@ -141,18 +141,18 @@ void VQF::updateAcc(const vqf_real_t acc[3])
 
     // inclination correction
     vqf_real_t accCorrQuat[4];
-    vqf_real_t q_w = sqrt((accEarth[2]+1)/2);
+    vqf_real_t q_w = sqrt((accEarth[2]+1.0)/2.0);
     if (q_w > 1e-6) {
         accCorrQuat[0] = q_w;
         accCorrQuat[1] = 0.5*accEarth[1]/q_w;
         accCorrQuat[2] = -0.5*accEarth[0]/q_w;
-        accCorrQuat[3] = 0;
+        accCorrQuat[3] = 0.0;
     } else {
         // to avoid numeric issues when acc is close to [0 0 -1], i.e. the correction step is close (<= 0.00011°) to 180°:
-        accCorrQuat[0] = 0;
-        accCorrQuat[1] = 1;
-        accCorrQuat[2] = 0;
-        accCorrQuat[3] = 0;
+        accCorrQuat[0] = 0.0;
+        accCorrQuat[1] = 1.0;
+        accCorrQuat[2] = 0.0;
+        accCorrQuat[3] = 0.0;
     }
     quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
     normalize(state.accQuat, 4);
@@ -171,15 +171,15 @@ void VQF::updateAcc(const vqf_real_t acc[3])
 
         // get rotation matrix corresponding to accGyrQuat
         getQuat6D(accGyrQuat);
-        R[0] = 1 - 2*square(accGyrQuat[2]) - 2*square(accGyrQuat[3]); // r11
-        R[1] = 2*(accGyrQuat[2]*accGyrQuat[1] - accGyrQuat[0]*accGyrQuat[3]); // r12
-        R[2] = 2*(accGyrQuat[0]*accGyrQuat[2] + accGyrQuat[3]*accGyrQuat[1]); // r13
-        R[3] = 2*(accGyrQuat[0]*accGyrQuat[3] + accGyrQuat[2]*accGyrQuat[1]); // r21
-        R[4] = 1 - 2*square(accGyrQuat[1]) - 2*square(accGyrQuat[3]); // r22
-        R[5] = 2*(accGyrQuat[2]*accGyrQuat[3] - accGyrQuat[1]*accGyrQuat[0]); // r23
-        R[6] = 2*(accGyrQuat[3]*accGyrQuat[1] - accGyrQuat[0]*accGyrQuat[2]); // r31
-        R[7] = 2*(accGyrQuat[0]*accGyrQuat[1] + accGyrQuat[3]*accGyrQuat[2]); // r32
-        R[8] = 1 - 2*square(accGyrQuat[1]) - 2*square(accGyrQuat[2]); // r33
+        R[0] = 1.0 - 2.0*square(accGyrQuat[2]) - 2.0*square(accGyrQuat[3]); // r11
+        R[1] = 2.0*(accGyrQuat[2]*accGyrQuat[1] - accGyrQuat[0]*accGyrQuat[3]); // r12
+        R[2] = 2.0*(accGyrQuat[0]*accGyrQuat[2] + accGyrQuat[3]*accGyrQuat[1]); // r13
+        R[3] = 2.0*(accGyrQuat[0]*accGyrQuat[3] + accGyrQuat[2]*accGyrQuat[1]); // r21
+        R[4] = 1.0 - 2.0*square(accGyrQuat[1]) - 2.0*square(accGyrQuat[3]); // r22
+        R[5] = 2.0*(accGyrQuat[2]*accGyrQuat[3] - accGyrQuat[1]*accGyrQuat[0]); // r23
+        R[6] = 2.0*(accGyrQuat[3]*accGyrQuat[1] - accGyrQuat[0]*accGyrQuat[2]); // r31
+        R[7] = 2.0*(accGyrQuat[0]*accGyrQuat[1] + accGyrQuat[3]*accGyrQuat[2]); // r32
+        R[8] = 1.0 - 2.0*square(accGyrQuat[1]) - 2.0*square(accGyrQuat[2]); // r33
 
         // calculate R*b_hat (only the x and y component, as z is not needed)
         biasLp[0] = R[0]*state.bias[0] + R[1]*state.bias[1] + R[2]*state.bias[2];
@@ -224,7 +224,7 @@ void VQF::updateAcc(const vqf_real_t acc[3])
         if (w[0] >= 0) {
             // clip disagreement to -2..2 °/s
             // (this also effectively limits the harm done by the first inclination correction step)
-            clip(e, 3, -biasClip, biasClip);
+            clip(e, 3.0, -biasClip, biasClip);
 
             // step 2: K = P R^T inv(W + R P R^T)
             vqf_real_t K[9];

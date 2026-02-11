@@ -96,7 +96,7 @@ class IMU : protected gpio {
                     bmi_gyro_timer_val  = 500;
                     mag_timer_val       = 6451;
                     dps_timer_val       = 14100;
-                    quat_timer_val      = 1000;
+                    quat_timer_val      = 625;
                     delay = 50;
                     break;
 
@@ -177,6 +177,8 @@ class IMU : protected gpio {
             vqf = std::make_unique<VQF>((double)bmi_gyro_timer_val*1e-6, 
                                         (double)bmi_accel_timer_val*1e-6, 
                                         (double)mag_timer_val*1e-6);
+            vqf->setTauAcc(0.4);                 
+
             bmi_accel_timer       = std::make_unique<Timer>(std::chrono::microseconds(bmi_accel_timer_val));
             bmi_gyro_timer        = std::make_unique<Timer>(std::chrono::microseconds(bmi_gyro_timer_val));
             quat_timer            = std::make_unique<Timer>(std::chrono::microseconds(quat_timer_val));
@@ -261,6 +263,10 @@ class IMU : protected gpio {
             AccelData* slot = accel_buffer_.prepare_write();
 
             if (bmi088_->readAccelCalibrated(slot->x, slot->y, slot->z)) {
+
+                vqf_real_t accel[3] = {slot->x*9.80665, slot->y*9.80665, slot->z*9.80665};
+                vqf->updateAcc(accel);
+
                 slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -292,6 +298,10 @@ class IMU : protected gpio {
             GyroData* slot = gyro_buffer_.prepare_write();
 
             if (bmi088_->readGyro(slot->x, slot->y, slot->z)) {
+
+                vqf_real_t gyro[3] = {slot->x, slot->y, slot->z};
+                vqf->updateGyr(gyro);
+
                 slot->timestamp_us =  std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -308,6 +318,10 @@ class IMU : protected gpio {
             if (mag_->dataReady()){
                 MagData* slot = mag_buffer_.prepare_write();
                 if (mag_->readCalibrated(slot->x, slot->y, slot->z)) {
+
+                    vqf_real_t mag[3] = {slot->x, slot->y, slot->z};
+                    vqf->updateMag(mag);
+
                     slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                         std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -360,10 +374,6 @@ class IMU : protected gpio {
                         std::chrono::steady_clock::now().time_since_epoch()).count();
 
                     baro_buffer_.commit();
-
-                    if(vqf->getRestDetected()){
-                            altitude0 = EKF->xhat(0);
-                    }
                     has_new_baro_.store(true, std::memory_order_release);
 
                     return true;
@@ -467,7 +477,7 @@ class IMU : protected gpio {
                 running = false;
             }
         }
-        void stop_sensor_threads() {
+        void stop_sensor_thread() {
             if(!running) {
                 return;
             }
@@ -477,62 +487,52 @@ class IMU : protected gpio {
             if(sensor_update_thread.joinable()) {
                 sensor_update_thread.join();
             }
-            if(quat_update_thread.joinable()){
-                quat_update_thread.join();
-            }
 
         }
 
-        void update_quat_thread() {
-            try {
-                quat_update_thread = std::thread([this] {
-                    // Set real-time priority for this thread specifically
+        void update_imu(){
 
-                    #ifdef __linux__
-                        pin_thread_to_core(3);
-                        sched_param param{};
-                        param.sched_priority = 99; 
-                        pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
-                    #endif
-                
-                    //bool wait_type = delay <= 100;
-                    //const auto interval = std::chrono::microseconds(delay);
-                    //auto next_deadline = std::chrono::steady_clock::now() + interval;
-                
-                    while (running) {
-                        update_quat();
-
-                        //if(wait_type) hybrid_wait(next_deadline, interval);
-                        std::this_thread::sleep_for(std::chrono::microseconds(delay));
-                    }
-                });
-            } catch (const std::exception& e) {
-                std::cerr << "Failed to create update_quat_thread: " << e.what() << "\n";
-            }
+            update_gyro();
+            update_accel();
+            if (mag_ != nullptr) update_mag();
+            if (dps310_ != nullptr) update_baro();
         }
 
-        // Uses vqf to update quaternion with gyroscope, accelerometer, and optionally magnetometer data
-        void update_quat(){
+        ~IMU(){
 
-            if(get_latest_gyro_and_consume(gydat)){
-                vqf_real_t gyro[3] = {gydat.x, gydat.y, gydat.z};
-                vqf->updateGyr(gyro);
-            }
-            if(get_latest_accel_and_consume(accdat)){
-                vqf_real_t accel[3] = {accdat.x*9.80665, accdat.y*9.80665, accdat.z*9.80665};
-                vqf->updateAcc(accel);
-            }
-            if(mag_ != nullptr){
-                if(get_latest_mag_and_consume(magdat)){
-                    vqf_real_t mag[3] = {magdat.x, magdat.y, magdat.z};
-                    vqf->updateMag(mag);
-                }
-            }
-            if(!quat_timer->check()) return;
+            stop_sensor_thread();
+            bmi088_.reset();
+            if(mag_) mag_.reset();
+            if(dps310_) dps310_.reset();
+            vqf.reset();
+            bmi_accel_timer->stop();
+            bmi_gyro_timer->stop();
+            if(mag_) mag_timer->stop();
+            if(dps310_) dps_timer->stop();
+            quat_timer->stop();
+
+            close_gpio();
+        }
+    private:
+
+    // read all sensors in the imu until running = false
+    void update10DOF() {
+
+        #ifdef __linux__
+            sched_param param{};
+            param.sched_priority = 99; 
+            pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+        #endif
+
+        while (running) {
+            update_imu();
+
+            //______ Update Quat ______
+            if(!quat_timer->check()) continue;
 
             if(mag_ != nullptr){
                 QuatData* slot = quat_buffer_.prepare_write();
-                vqf->getQuat9D(slot->q);
+                vqf->getQuat6D(slot->q);
                 slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
                 
@@ -548,78 +548,11 @@ class IMU : protected gpio {
                 quat_buffer_.commit();
                 has_new_quat_.store(true, std::memory_order_release);
             }
-        }
 
-        void update_imu(){
-
-            update_gyro();
-            update_accel();
-            if (mag_ != nullptr) update_mag();
-            if (dps310_ != nullptr) update_baro();
-        }
-
-        ~IMU(){
-
-            stop_sensor_threads();
-            if(dps310_) dps310_.reset();
-            bmi088_.reset();
-            if(mag_) mag_.reset();
-            vqf.reset();
-            bmi_accel_timer->stop();
-            bmi_gyro_timer->stop();
-            if(mag_) mag_timer->stop();
-            if(dps310_) dps_timer->stop();
-            quat_timer->stop();
-
-            close_gpio();
-        }
-    private:
-
-    void pin_thread_to_core(int core_id) {
-        cpu_set_t cpuset;
-        CPU_ZERO(&cpuset);
-        CPU_SET(core_id, &cpuset);
-
-        pthread_t current_thread = pthread_self();
-        if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0) {
-            std::cerr << "Error pinning thread to core " << core_id << "\n";
-        }
-    }
-
-    void hybrid_wait(std::chrono::steady_clock::time_point& next_deadline, 
-                     std::chrono::microseconds interval) {
-
-        // Spin Phase
-        while (std::chrono::steady_clock::now() < next_deadline) {
-            asm volatile("yield");
-        }
-
-        // Update deadline
-        next_deadline += interval;
-
-        auto post_now = std::chrono::steady_clock::now();
-        if (post_now > next_deadline + std::chrono::microseconds(50)) {
-            next_deadline = post_now + interval;
-        }
-    }
-
-        //  read all sensors in the imu until running = false
-    void update10DOF() {
-        // interval calculated from your microsecond delay
-        //const auto interval = std::chrono::microseconds(delay);
-        //auto next_deadline = std::chrono::steady_clock::now() + interval;
-
-        #ifdef __linux__
-            pin_thread_to_core(2);
-            sched_param param{};
-            param.sched_priority = 99; 
-            pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
-        #endif
-
-        //bool wait_type = delay <= 100;
-        while (running) {
-            update_imu();
-            //if(wait_type) hybrid_wait(next_deadline, interval);
+            //______ Rest Detect ______
+            //if(vqf->getRestDetected()){
+            //    altitude0 = EKF->xhat(0);
+            //}
             std::this_thread::sleep_for(std::chrono::microseconds(delay));
         }
     }
@@ -695,5 +628,4 @@ class IMU : protected gpio {
         // sensor readings
         std::atomic<bool> running = false;
         std::thread sensor_update_thread;
-        std::thread quat_update_thread;
 };
