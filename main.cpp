@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cmath>
 #include <thread>
 #include <chrono>
 #include <Eigen/Dense>
@@ -9,8 +10,10 @@
 int main(){
 
     IMU imu(IMU::PerformanceMode::High, true, true);
+    imu.init_PCA9685();
+    uint16_t on_vals[16] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0}; 
 
-    int counter = 0; const int max_samples = 500;
+    int counter = 0; const int max_samples = 10;
     BaroData barodat;
     GyroData gydat;
     AccelData accdat;
@@ -35,12 +38,24 @@ int main(){
 
         }
         
+        if(imu.get_latest_gyro_and_consume(gydat)){
+
+            //std::cout << gydat.timestamp_us << "\n";
+        }
+
         if(print_timer->check()){
             //std::cout << " w: " << quat.q[0]  << " x: " << quat.q[1]  << " y: " << quat.q[2]  << " z: " << quat.q[3] << "\n";
             //std::cout << " x: " << accdatptr->x  << " y: " << accdatptr->y  << " z: " << accdatptr->z  << "\n\n";
             //std::cout << " Baro Altitude: " << barodat.altitude_m << " m" << " Baro Pressure: " << barodat.pressure_Pa << " Pa" << " Baro Temp: " << barodat.temperature_C << " C" << " Vertical Speed: " << barodat.vertical_speed_mps << " m/s\n";
-            std::cout << " x: " << rotated_acc.x()  << " y: " << rotated_acc.y()  << " z: " << rotated_acc.z()  << "\n";
+            //std::cout << " x: " << rotated_acc.x()  << " y: " << rotated_acc.y()  << " z: " << rotated_acc.z()  << "\n";
             
+            int val = static_cast<int>((double)counter/(double)max_samples*4095.0);
+            on_vals[0] = val;
+            on_vals[1] = val;
+            on_vals[2] = val;
+            on_vals[3] = val;
+            imu.Set_pwm(0, 4, on_vals);
+
             counter++;
         }
             

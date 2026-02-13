@@ -114,5 +114,34 @@ PYBIND11_MODULE(imupy, m) {
         })
         .def("update_imu", [](IMU &self) {
             self.update_imu();
-        });
+        })
+
+        .def("init_pca9685", &IMU::init_PCA9685,
+             py::arg("addr")      = 0x41,
+             py::arg("osc_freq")  = 25500000,
+             py::arg("pwm_freq")  = 500.0f,
+             R"doc(
+                 Initialize the PCA9685 PWM controller connected to this IMU board.
+
+                 Args:
+                     addr: I2C address of the PCA9685 (default: 0x41)
+                     osc_freq: Oscillator frequency in Hz (default: 25500000)
+                     pwm_freq: Desired PWM output frequency in Hz (default: 500.0)
+             )doc")
+        .def("set_pwm",
+         [](IMU &self, uint8_t start, py::array_t<uint16_t> values) {
+             auto buf = values.request();
+             if (buf.ndim != 1) {
+                 throw py::value_error("off_vals must be 1D array");
+             }
+             size_t cnt = buf.shape[0];
+             if (cnt == 0 || cnt > 8) {
+                 throw py::value_error("Number of values must be 1–8");
+             }
+             const uint16_t* data = static_cast<const uint16_t*>(buf.ptr);
+             self.Set_pwm(start, static_cast<uint8_t>(cnt), data);
+         },
+         py::arg("start"),
+         py::arg("off_vals"));
+
 }

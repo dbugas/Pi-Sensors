@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <array>
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -16,6 +17,12 @@
 #include "DataBuffer.h"
 #include "gpio.h"
 #include "srKF.h"
+
+struct PWMval {
+    std::array<uint16_t, 16> pwm_Val{};
+    uint8_t start;
+    uint8_t count;
+};
 
 struct AccelData {
     double x, y, z;             // m/s
@@ -464,6 +471,34 @@ class IMU : protected gpio {
             return false;
         }
 
+        // PCA9685 functions
+
+        void init_PCA9685(uint8_t addr = 0x41, int osc_freq = 25500000, float pwm_freq = 500.0f){
+            pwm_ = std::make_unique<PCA9685>(1, addr);
+
+            pwm_->begin();
+            pwm_->setOscillatorFrequency(osc_freq);
+            pwm_->setPWMFreq(pwm_freq);
+
+        }
+        void Set_pwm(const uint8_t start_, const uint8_t count_, const uint16_t* off_vals){
+           if(!pwm_){
+               std::cerr << "PCA9685 not initialized\n";
+               return;
+           }
+           if(count_ > 8){
+               std::cout << "Count must be less than or equal to 8. \n";
+               return;
+           }
+           PWMval* slot = pwm_buffer_.prepare_write();
+           slot->start = start_;
+           slot->count = count_;
+           std::copy(off_vals, off_vals + count_, slot->pwm_Val.begin());
+
+           pwm_buffer_.commit();
+           newPWM.store(true, std::memory_order_release);
+        }
+
         // Starts thread to read all IMU sensors (BMI088, DPS310, LISxMDL)
         void start_sensor_thread() {
             running = true;
@@ -501,15 +536,22 @@ class IMU : protected gpio {
         ~IMU(){
 
             stop_sensor_thread();
+
             bmi088_.reset();
+            vqf.reset();
             if(mag_) mag_.reset();
             if(dps310_) dps310_.reset();
-            vqf.reset();
+            if(pwm_) {
+                pwm_->setPWMMultiple(0, 8, on_vals, on_vals); // set all pwm channels to 0
+                pwm_->setPWMMultiple(8, 8, on_vals, on_vals);
+                pwm_.reset();
+            }
+
             bmi_accel_timer->stop();
             bmi_gyro_timer->stop();
+            quat_timer->stop();
             if(mag_) mag_timer->stop();
             if(dps310_) dps_timer->stop();
-            quat_timer->stop();
 
             close_gpio();
         }
@@ -526,6 +568,12 @@ class IMU : protected gpio {
 
         while (running) {
             update_imu();
+            
+            if(newPWM.load(std::memory_order_acquire)){
+                const PWMval* slot = pwm_buffer_.get_latest();
+                pwm_->setPWMMultiple(slot->start, slot->count, on_vals, slot->pwm_Val.data());
+                newPWM.store(false, std::memory_order_release);
+            }
 
             //______ Update Quat ______
             if(!quat_timer->check()) continue;
@@ -593,6 +641,7 @@ class IMU : protected gpio {
         DataBuffer<MagData, 2>   mag_buffer_;
         DataBuffer<BaroData, 2>  baro_buffer_;
         DataBuffer<QuatData, 3>  quat_buffer_;
+        DataBuffer<PWMval, 2>    pwm_buffer_;
 
         AccelData accdat;
         GyroData gydat;
@@ -601,6 +650,7 @@ class IMU : protected gpio {
         std::unique_ptr<DPS310> dps310_;
         std::unique_ptr<BMI088> bmi088_;
         std::unique_ptr<LISxMDL> mag_;
+        std::unique_ptr<PCA9685> pwm_;
 
         std::unique_ptr<Timer> bmi_gyro_timer;
         std::unique_ptr<Timer> bmi_accel_timer;
@@ -622,9 +672,13 @@ class IMU : protected gpio {
         double altitude0 = 0.0;
 
         // bmi088 values
-        std::atomic<bool> isgyroRDY = false;
-        std::atomic<bool> isaccelRDY = false;
-        
+        std::atomic<bool> isgyroRDY{false};
+        std::atomic<bool> isaccelRDY{false};
+
+        // pwm 
+        std::atomic<bool> newPWM{false};
+        uint16_t on_vals[16] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};  
+
         // sensor readings
         std::atomic<bool> running = false;
         std::thread sensor_update_thread;

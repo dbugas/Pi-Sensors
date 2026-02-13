@@ -1,11 +1,13 @@
 import imupy
 import time
 from scipy.spatial.transform import Rotation as R
+import numpy as np
 
 # ------------------ Initialize IMU ------------------
 # Choose a performance mode (Ultra, High, Medium, Low)
 imu = imupy.IMU(imupy.PerformanceMode.High, Use_Mag=True, Use_Barometer=True)
-
+imu.init_pca9685()
+pwm_vals = np.array([0, 0, 0, 0], dtype=np.uint16)
 # Start the background sensor thread (runs continuously, and auto stops or may call stop_sensor_thread())
 imu.start_sensor_thread()
 
@@ -37,6 +39,12 @@ try:
         print(f"Quat:  w= {qw:.3f}, x= {qx:.3f}, y= {qy:.3f}, z= {qz:.3f}")
         print("-" * 40)
 
+        val = int(i/num*4095)
+        pwm_vals[0] = val
+        pwm_vals[1] = val
+        pwm_vals[2] = val
+        pwm_vals[3] = val
+        imu.set_pwm(start=0, off_vals=pwm_vals)
         time.sleep(0.25)
 finally:
     print(f"average gx: {gx_a/num:.8f}, gy: {gy_a/num:.8f}, gz: {gz_a/num:.8f}")

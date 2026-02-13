@@ -15,11 +15,6 @@ PCA9685::PCA9685(uint8_t i2c_bus, uint8_t addr) : i2c_bus_(i2c_bus), i2c_addr_(a
         throw std::runtime_error("Invalid I2C address: 0x" + std::to_string(addr));
     }
 
-    // Initialize pigpio
-    if (gpioInitialise() < 0) {
-        throw std::runtime_error("Failed to initialize pigpio");
-    }
-
     // Open I2C device
     i2c_handle_ = i2cOpen(i2c_bus, i2c_addr_, 0);
     if (i2c_handle_ < 0) {
@@ -42,11 +37,10 @@ PCA9685::~PCA9685() {
         // Ignore errors during cleanup
     }
     i2cClose(i2c_handle_);
-    gpioTerminate();
 
-#ifdef ENABLE_DEBUG_OUTPUT
-    std::cout << "PCA9685 destructor called" << std::endl;
-#endif
+    #ifdef ENABLE_DEBUG_OUTPUT
+        std::cout << "PCA9685 destructor called" << std::endl;
+    #endif
 }
 
 // Initialize the PCA9685
