@@ -13,7 +13,7 @@ int main(){
     imu.init_PCA9685();
     uint16_t on_vals[16] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0}; 
 
-    int counter = 0; const int max_samples = 10;
+    int counter = 0; const int max_samples = 500;
     BaroData barodat;
     GyroData gydat;
     AccelData accdat;
@@ -46,8 +46,8 @@ int main(){
         if(print_timer->check()){
             //std::cout << " w: " << quat.q[0]  << " x: " << quat.q[1]  << " y: " << quat.q[2]  << " z: " << quat.q[3] << "\n";
             //std::cout << " x: " << accdatptr->x  << " y: " << accdatptr->y  << " z: " << accdatptr->z  << "\n\n";
-            //std::cout << " Baro Altitude: " << barodat.altitude_m << " m" << " Baro Pressure: " << barodat.pressure_Pa << " Pa" << " Baro Temp: " << barodat.temperature_C << " C" << " Vertical Speed: " << barodat.vertical_speed_mps << " m/s\n";
-            //std::cout << " x: " << rotated_acc.x()  << " y: " << rotated_acc.y()  << " z: " << rotated_acc.z()  << "\n";
+            std::cout << " Baro Altitude: " << barodat.altitude_m << " m" << " Baro Pressure: " << barodat.pressure_Pa << " Pa" << " Baro Temp: " << barodat.temperature_C << " C" << " Vertical Speed: " << barodat.vertical_speed_mps << " m/s\n";
+            //std::cout << "rot x: " << rotated_acc.x()  << " rot y: " << rotated_acc.y()  << " rot z: " << rotated_acc.z()  << "\n";
             
             int val = static_cast<int>((double)counter/(double)max_samples*4095.0);
             on_vals[0] = val;

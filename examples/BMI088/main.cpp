@@ -59,8 +59,8 @@ int main()
         return 1;
     }
 
-    //BMI088 bmi(6, 800.0, BMI088::AccelOversampling::Normal, BMI088::GyroRange::DPS_1000, BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz);
-    BMI088 bmi;
+    BMI088 bmi(BMI088::AccelRange::G_6, BMI088::AccelODR::ODR_800Hz, BMI088::AccelOversampling::Normal, BMI088::GyroRange::DPS_1000, BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz);
+    //BMI088 bmi;
     int counter = 0;
     
     // ---------- non-interrupt handling ----------
@@ -68,7 +68,7 @@ int main()
     imu_buffer[1] = {};
 
     std::unique_ptr<Timer> imu_timer = std::make_unique<Timer>(std::chrono::microseconds(1250));
-    std::unique_ptr<Timer> print_timer = std::make_unique<Timer>(std::chrono::milliseconds(10));
+    std::unique_ptr<Timer> print_timer = std::make_unique<Timer>(std::chrono::milliseconds(100));
 
     imu_timer->set_callback([&](){
         // Choose the buffer NOT currently published
@@ -91,7 +91,7 @@ int main()
     imu_timer->start();
     print_timer->start();
 
-    while(counter < 10)
+    while(counter < 500)
     {
         /*
         // ---------- interrupt handling ----------
@@ -117,14 +117,14 @@ int main()
         // ---------- non-interrupt handling ----------
         if(print_timer->check())
         {
-            //IMUData* data = latest_imu_data.load();
-            //std::cout << "" << data->timestamp_us << "\n";
-            //std::cout << "GX: " << data->gx  
-            //        << "  GY: " << data->gy  
-            //        << "  GZ: " << data->gz  << "\n";
-            //std::cout << "AX: " << data->ax 
-            //        << "  AY: " << data->ay
-            //        << "  AZ: " << data->az  << "\n\n";
+            IMUData* data = latest_imu_data.load();
+            std::cout << "" << data->timestamp_us << "\n";
+            std::cout << "GX: " << data->gx  
+                    << "  GY: " << data->gy  
+                    << "  GZ: " << data->gz  << "\n";
+            std::cout << "AX: " << data->ax 
+                    << "  AY: " << data->ay
+                    << "  AZ: " << data->az  << "\n\n";
             counter++;
         }
         

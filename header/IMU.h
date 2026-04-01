@@ -230,11 +230,11 @@ class IMU : protected gpio {
                 altitude0 = avg /10.0;
 
                 EKF = std::make_unique<srKF>(
-                    Eigen::Matrix4d{{1,0,0,0}, {0,0.5,0,0}, {0,0,0.1,0}, {0,0,0,0.05}},
-                    Eigen::Matrix<double,1,1>{{10.0}},
-                    compute_process_noise_approx((double)bmi_accel_timer_val*1e-6, 0.01, 0.0001),
-                    Eigen::Vector4d{altitude0,0,0,0.01},
-                    (double)bmi_accel_timer_val*1e-6
+                    Eigen::Matrix4d{{1,0,0,0}, {0,0.5,0,0}, {0,0,0.1,0}, {0,0,0,0.05}}, // sigmaX
+                    10.0, // sigmaV
+                    compute_process_noise_approx((double)bmi_accel_timer_val*1e-6, 0.01, 0.0001), // sigmaW
+                    Eigen::Vector4d{altitude0,0,0,0.01}, // xhat0
+                    (double)bmi_accel_timer_val*1e-6 // dt
                 );
 
             }
@@ -372,7 +372,7 @@ class IMU : protected gpio {
                                             istempRDY, ispressureRDY);
 
                 if (ok) {
-                    EKF->KF_update_alt(Eigen::VectorXd::Constant(1, slot->pressure_Pa), slot->temperature_C + 273.15);
+                    EKF->KF_update_alt( slot->pressure_Pa, slot->temperature_C + 273.15);
                     EKF->SageHusa_update_alt();
                     //dps310_->calculateAltitudeChange(slot->pressure_Pa, slot->temperature_C,
                     //                                slot->altitude_m, altitude_change);
@@ -616,13 +616,13 @@ class IMU : protected gpio {
         const double dt3 = dt2 * dt;
         const double dt4 = dt3 * dt;
 
-        Q(0, 0) = (dt4 / 20.0 * q_accel + dt * q_bias)*250.0;
-        Q(0, 1) = (dt3 / 8.0 * q_accel + dt * q_bias) * 10.0;
-        Q(0, 2) = (dt2 / 6.0 * q_accel + dt * q_bias) * 10.0;
+        Q(0, 0) = (dt4 / 20.0 * q_accel + dt * q_bias);
+        Q(0, 1) = (dt3 / 8.0 * q_accel + dt * q_bias);
+        Q(0, 2) = (dt2 / 6.0 * q_accel + dt * q_bias);
 
         Q(1, 0) = Q(0, 1);
-        Q(1, 1) = (dt2 / 3.0 * q_accel + dt * q_bias) * 10.0;
-        Q(1, 2) = (dt / 2.0 * q_accel + dt * q_bias) * 10.0;
+        Q(1, 1) = (dt2 / 3.0 * q_accel + dt * q_bias);
+        Q(1, 2) = (dt / 2.0 * q_accel + dt * q_bias);
 
         Q(2, 0) = Q(0, 2);
         Q(2, 1) = Q(1, 2);
@@ -636,6 +636,7 @@ class IMU : protected gpio {
         std::unique_ptr<VQF> vqf;
         std::unique_ptr<srKF> EKF;
 
+        // buffers
         DataBuffer<AccelData, 3> accel_buffer_;
         DataBuffer<GyroData, 3>  gyro_buffer_;
         DataBuffer<MagData, 2>   mag_buffer_;
@@ -647,11 +648,13 @@ class IMU : protected gpio {
         GyroData gydat;
         MagData magdat;
 
+        // sensors
         std::unique_ptr<DPS310> dps310_;
         std::unique_ptr<BMI088> bmi088_;
         std::unique_ptr<LISxMDL> mag_;
         std::unique_ptr<PCA9685> pwm_;
 
+        // sensor software update rates
         std::unique_ptr<Timer> bmi_gyro_timer;
         std::unique_ptr<Timer> bmi_accel_timer;
         std::unique_ptr<Timer> mag_timer;
@@ -663,7 +666,7 @@ class IMU : protected gpio {
         std::atomic<bool> has_new_mag_{false};
         std::atomic<bool> has_new_baro_{false};
         std::atomic<bool> has_new_quat_{false};
-        int delay = 50;
+        int delay = 50; // software update
 
         // dps310 values
         bool ispressureRDY = false;

@@ -32,7 +32,7 @@ try:
         gy_a += float(gy)
         gz_a += float(gz) 
 
-        print(f"Accel: ({ax*9.806:.5f}, {ay*9.806:.5f}, {az*9.806:.5f}) m/s^2")
+        print(f"Accel: ({ax:.5f}, {ay:.5f}, {az:.5f}) m/s^2")
         print(f"Gyro:  ({gx:.5f}, {gy:.5f}, {gz:.5f}) rad/s")
         print(f"Mag:   ({mx:.5f}, {my:.5f}, {mz:.5f}) (unitless)")
         print(f"Baro:  {pressure:.5f} Pa, {temp:.5f} C, {altitude:.5f} m")

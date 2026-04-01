@@ -50,8 +50,8 @@ x0 = 0.00474523
 # Configuration
 # =============================================
 GENERATE_RANDOM_ELLIPSOID = False     # use real time data. 
-SAVE_DATA = False                     # save real time data
-LOAD_DATA = True                     # Load real time data
+SAVE_DATA = True                     # save real time data
+LOAD_DATA = False                     # Load real time data
 filepath = "acc_xyz.csv"              # path for loading data
 FileName = "acc_xyz1.csv"              # file name for saved data
 GET_MAGNETOMETER_DATA = False         # use magnetometer for real time data
@@ -476,10 +476,8 @@ def plot_ellipsoids(points, x0_orig, x0_fit, coeffs, a_fit, b_fit, c_fit, V_fit)
                c='black', s=4, alpha=0.45, label='Measured points')
     
     # Plot centers
-    ax.scatter(*x0_orig, c='blue', s=140, marker='*',
-               label='Reference center (dummy)', zorder=10)
-    ax.scatter(*x0_fit, c='red', s=180, marker='*',
-               label='Fitted center', zorder=10)
+    ax.scatter(*x0_orig, c='blue', s=140, marker='*', label='Reference center (dummy)', zorder=10)
+    ax.scatter(*x0_fit, c='red', s=180, marker='*', label='Fitted center', zorder=10)
     
     # ──────────────────────────────────────────────────────────────
     # Parametric surface of ellipsoid
@@ -500,7 +498,7 @@ def plot_ellipsoids(points, x0_orig, x0_fit, coeffs, a_fit, b_fit, c_fit, V_fit)
         # Stack into 3×N array and reshape to match grid
         principal_pts = np.stack([x_ell, y_ell, z_ell], axis=0)  # shape (3, n_v, n_u)
         
-        # Apply rotation (V_fit is the rotation matrix from principal → world frame)
+        # Apply rotation (V_fit is the rotation matrix from principal to world frame)
         rotated = np.einsum('ij,jkl->ikl', V_fit, principal_pts)  # shape (3, n_v, n_u)
         
         # Translate to fitted center
@@ -515,8 +513,7 @@ def plot_ellipsoids(points, x0_orig, x0_fit, coeffs, a_fit, b_fit, c_fit, V_fit)
                               rstride=2, cstride=2,
                               shade=True)
         
-        # Optional: add some lighting/shading effect
-        surf.set_facecolor((1, 0.3, 0.3, 0.22))  # reddish tint
+        surf.set_facecolor((1, 0.3, 0.3, 0.22)) 
         surf.set_edgecolor('none')
     
     ax.set_xlabel('X')
@@ -651,7 +648,7 @@ def Get_data(imu, GET_MAGNETOMETER_DATA, GET_ACCELEROMETER_DATA):
             elif key == '\x03':  # Ctrl+C
                 raise KeyboardInterrupt
 
-            time.sleep(0.0025)  # ~12–13 updates/sec
+            time.sleep(0.0025)  # ~400 updates/sec
 
     except KeyboardInterrupt:
         print("\n\nStopped by Ctrl+C")
