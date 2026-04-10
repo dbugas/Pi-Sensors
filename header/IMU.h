@@ -473,7 +473,7 @@ class IMU : protected gpio {
 
         // PCA9685 functions
 
-        void init_PCA9685(uint8_t addr = 0x41, int osc_freq = 25500000, float pwm_freq = 500.0f){
+        void init_PCA9685(uint8_t addr = 0x40, int osc_freq = 25500000, float pwm_freq = 500.0f){
             pwm_ = std::make_unique<PCA9685>(1, addr);
 
             pwm_->begin();
@@ -487,7 +487,7 @@ class IMU : protected gpio {
                return;
            }
            if(count_ > 8){
-               std::cout << "Count must be less than or equal to 8. \n";
+               std::cout << "Count must be between 1 and 8. \n";
                return;
            }
            PWMval* slot = pwm_buffer_.prepare_write();

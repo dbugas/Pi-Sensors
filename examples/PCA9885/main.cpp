@@ -5,7 +5,7 @@
 #include "PCA9685.h"
 
 int main() {
-    PCA9685 pwm(1, 0x41);
+    PCA9685 pwm(1, 0x40);
     std::cout << "enter begin\n";
     pwm.begin();
     std::cout << "enter setOscillatorFrequency\n";

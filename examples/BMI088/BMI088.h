@@ -59,96 +59,91 @@ class BMI088 : public gpio {
         };
 
         BMI088(){
+
+            init_gpio();
+
             spi_gyro = spiOpenBus(CS_GYR, SPI_BAUD, SPI_FLAGS);
             if (spi_gyro < 0)
             {
-                std::cerr << "SPI gyro open failed\n";
-                gpioTerminate();
+                std::cerr << "[BMI088] SPI gyro open failed\n";
             }
             spi_acc = spiOpenBus(CS_ACC, SPI_BAUD, SPI_FLAGS);
 
             if (spi_acc < 0)
             {
-                std::cerr << "SPI accel open failed\n";
-                gpioTerminate();
+                std::cerr << "[BMI088] SPI accel open failed\n";
             }
             // Verify gyro identity
             initGyro(BMI088::GyroRange::DPS_1000, BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz);
             uint8_t id = spiRead8(spi_gyro, BMI088_GYR_CHIP_ID);
 
             #ifdef DEBUG_BMI088
-                std::cout << "Gyro CHIP_ID: 0x" << std::hex << int(id) << std::dec << "\n";
+                std::cout << "[BMI088] Gyro CHIP_ID: 0x" << std::hex << int(id) << std::dec << "\n";
             #endif
 
             if (id != BMI088_GYR_ID)
             {
-                std::cerr << "Gyro not detected\n";
-                spiCloseBus(spi_gyro);
-                spiCloseBus(spi_acc);
-                gpioTerminate();
+                std::cerr << "[BMI088] Gyro not detected\n";
             }
 
             // Verify accel identity/needed for startup with spi
-            initAccelerometer(BMI088::AccelRange::G_6, BMI088::AccelODR::ODR_800Hz, BMI088::AccelOversampling::Normal);
             id = readAccelChipID();
+            initAccelerometer(BMI088::AccelRange::G_6, BMI088::AccelODR::ODR_800Hz, BMI088::AccelOversampling::Normal);
 
             #ifdef DEBUG_BMI088
-                std::cout << "Accel CHIP_ID: 0x"<< std::hex << int(id) << std::dec << "\n";
+                std::cout << "[BMI088] Accel CHIP_ID: 0x"<< std::hex << int(id) << std::dec << "\n";
             #endif
 
             if (id != BMI088_ACC_ID)
             {
-                std::cerr << "Accel not detected\n";
-                spiCloseBus(spi_gyro);
-                spiCloseBus(spi_acc);
-                gpioTerminate();
+                std::cerr << "[BMI088] Accel not detected\n";
             }
+
+            initCalibrationMatrix();
         }
         BMI088(AccelRange accel_range, AccelODR accel_odr, AccelOversampling accel_osr, 
             GyroRange gyro_range, GyroBandwidth gyro_bandwidth){
+            init_gpio();
+
             spi_gyro = spiOpenBus(CS_GYR, SPI_BAUD, SPI_FLAGS);
             if (spi_gyro < 0)
             {
-                std::cerr << "SPI gyro open failed\n";
-                gpioTerminate();
+                std::cerr << "[BMI088] SPI gyro open failed\n";
             }
             spi_acc = spiOpenBus(CS_ACC, SPI_BAUD, SPI_FLAGS);
 
             if (spi_acc < 0)
             {
-                std::cerr << "SPI accel open failed\n";
-                gpioTerminate();
+                std::cerr << "[BMI088] SPI accel open failed\n";
             }
             // Verify gyro identity
             initGyro(gyro_range, gyro_bandwidth);
             uint8_t id = spiRead8(spi_gyro, BMI088_GYR_CHIP_ID);
 
             #ifdef DEBUG_BMI088
-                std::cout << "Gyro CHIP_ID: 0x" << std::hex << int(id) << std::dec << "\n";
+                std::cout << "[BMI088] Gyro CHIP_ID: 0x" << std::hex << int(id) << std::dec << "\n";
             #endif
 
             if (id != BMI088_GYR_ID)
             {
-                std::cerr << "Gyro not detected\n";
+                std::cerr << "[BMI088] Gyro not detected\n";
                 spiCloseBus(spi_gyro);
                 spiCloseBus(spi_acc);
-                gpioTerminate();
             }
 
             // Verify accel identity/needed for startup with spi
-            initAccelerometer(accel_range, accel_odr, accel_osr);
             id = readAccelChipID();
+            initAccelerometer(accel_range, accel_odr, accel_osr);
 
             #ifdef DEBUG_BMI088
-                std::cout << "Accel CHIP_ID: 0x"<< std::hex << int(id) << std::dec << "\n";
+                std::cout << "[BMI088] Accel CHIP_ID: 0x"<< std::hex << int(id) << std::dec << "\n";
             #endif
 
             if (id != BMI088_ACC_ID)
             {
-                std::cerr << "Accel not detected\n";
+                std::cerr << "[BMI088] Accel not detected\n";
                 spiCloseBus(spi_gyro);
                 spiCloseBus(spi_acc);
-                gpioTerminate();
             }
 
             initCalibrationMatrix();
@@ -162,9 +157,9 @@ class BMI088 : public gpio {
         }
 
         // Convert raw signed 16-bit values to scaled rad per second
-        gx_dps = static_cast<double>(gx_raw) * gyro_scale;
-        gy_dps = static_cast<double>(gy_raw) * gyro_scale;
-        gz_dps = static_cast<double>(gz_raw) * gyro_scale;
+        gx_dps = static_cast<double>(gx_raw) * gyro_scale - Offset_gyro[0];
+        gy_dps = static_cast<double>(gy_raw) * gyro_scale - Offset_gyro[1];
+        gz_dps = static_cast<double>(gz_raw) * gyro_scale - Offset_gyro[2];
 
         return true;
     }
@@ -358,6 +353,8 @@ class BMI088 : public gpio {
 
         spiCloseBus(spi_gyro);
         spiCloseBus(spi_acc);
+
+        close_gpio();
     }
     private:
 
@@ -380,9 +377,9 @@ class BMI088 : public gpio {
         //gpioDelay(5000);
 
         #ifdef DEBUG_BMI088
-            std::cout << "INT_CTRL = 0x%02X\n" << spiRead8(spi_gyro, 0x15) << "\n";
-            std::cout << "INT_MAP  = 0x%02X\n" << spiRead8(spi_gyro, 0x18) << "\n";
-            std::cout << "INT_CONF = 0x%02X\n" << spiRead8(spi_gyro, 0x16) << "\n";
+            std::cout << "[BMI088] INT_CTRL = 0x%02X\n" << spiRead8(spi_gyro, 0x15) << "\n";
+            std::cout << "[BMI088] INT_MAP  = 0x%02X\n" << spiRead8(spi_gyro, 0x18) << "\n";
+            std::cout << "[BMI088] INT_CONF = 0x%02X\n" << spiRead8(spi_gyro, 0x16) << "\n";
         #endif
         // ───────────────────────────────────────────────────────────
     }
@@ -455,9 +452,11 @@ class BMI088 : public gpio {
         uint8_t rx[3] = {0};
 
         spiTransfer(spi_acc, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 3);
-
+        spiTransfer(spi_acc, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 3);
+        
         return rx[2]; // rx[1] is dummy, rx[2] is CHIP_ID
     }
+
 
     void spiWrite8(const int spi, const uint8_t reg, const uint8_t val){
         char tx[2] = {static_cast<char>(reg & 0x7F), static_cast<char>(val)};
@@ -487,18 +486,26 @@ class BMI088 : public gpio {
         constexpr double S_diag[3][3] = {{1.10766793, 0.00000000, 0.00000000},
                                          {0.00000000, 1.00533049, 0.00000000},
                                          {0.00000000, 0.00000000, 0.87716575}};
+        double temp[3][3] = {0};
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                temp[i][j] = 0.0;
+                for (int k = 0; k < 3; ++k) {
+                    temp[i][j] += S_diag[i][k] * R[j][k];  
+                }
+            }
+        }
 
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 3; ++j) {
                 calibMatrix[i][j] = 0.0;
                 for (int k = 0; k < 3; ++k) {
-                    calibMatrix[i][j] += S_diag[i][k] * R[j][k];  
+                    calibMatrix[i][j] += R[i][k]*temp[k][j];  
                 }
             }
         }
-
         #ifdef DEBUG_BMI088
-        std::cout << "[BMI088] Calibration matrix (S*R^T):\n";
+        std::cout << "[BMI088] Calibration matrix (R*S*R^T):\n";
         for (int i = 0; i < 3; ++i) {
             std::cout << "  ";
             for (int j = 0; j < 3; ++j) {
@@ -523,10 +530,14 @@ class BMI088 : public gpio {
         0.01032585,
         -0.05219814
     };
-
+    static constexpr double Offset_gyro[3] = {
+        0.00262801,    
+        -0.00188499,
+        -0.00057151
+    };
     // --------------- Configuration ---------------
-    static constexpr unsigned SPI_BAUD  = 5000000;   
-    static constexpr unsigned SPI_FLAGS = 0x100;     // AUX SPI (SPI1), mode 0
+    static constexpr unsigned SPI_BAUD  = 500000;   
+    static constexpr unsigned SPI_FLAGS = 0x00;     // 0x100 AUX SPI (SPI1), mode 0
     static constexpr unsigned CS_GYR    = 1;         // /dev/spidev1.1
     static constexpr unsigned CS_ACC    = 0;
     // --------------- BMI088 Gyro Registers ---------------

@@ -117,14 +117,15 @@ PYBIND11_MODULE(imupy, m) {
         })
 
         .def("init_pca9685", &IMU::init_PCA9685,
-             py::arg("addr")      = 0x41,
+             py::arg("addr")      = 0x40,
              py::arg("osc_freq")  = 25500000,
              py::arg("pwm_freq")  = 500.0f,
              R"doc(
-                 Initialize the PCA9685 PWM controller connected to this IMU board.
+                 Initialize the PCA9685 PWM controller connected to this IMU board. Safely writes pwm values
+                 when other sensors use I2C.
 
                  Args:
-                     addr: I2C address of the PCA9685 (default: 0x41)
+                     addr: I2C address of the PCA9685 (default: 0x40)
                      osc_freq: Oscillator frequency in Hz (default: 25500000)
                      pwm_freq: Desired PWM output frequency in Hz (default: 500.0)
              )doc")

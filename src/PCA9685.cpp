@@ -8,6 +8,7 @@
 // Constructor
 PCA9685::PCA9685(uint8_t i2c_bus, uint8_t addr) : i2c_bus_(i2c_bus), i2c_addr_(addr) {
     // Validate I2C bus and address
+
     if (i2c_bus > 1) {
         throw std::runtime_error("Invalid I2C bus: " + std::to_string(i2c_bus));
     }

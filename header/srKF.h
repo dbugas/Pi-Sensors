@@ -38,5 +38,5 @@ private:
 
 	double T = 1.0; // accel Sampling time
 	double p0 = 101325.0;
-	double d_R = 0.9;
+	double d_R = 0.95;
 };

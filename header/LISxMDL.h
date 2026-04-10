@@ -4,9 +4,11 @@
 #include <iostream>
 #include <cstdint>
 
+#include "gpio.h"
+
 //#define DEBUG_LIS3MDL  // Uncomment for debug output
 
-class LISxMDL {
+class LISxMDL  {
 public:
     // ---------------- ODR (CTRL_REG1 bits 7 + [4:2]) ----------------
     enum class ODR : uint8_t {
@@ -230,6 +232,7 @@ void init(FullScale range, ODR odr) {
         0.15742409
     };
     double scale;
+
     // ---------------- Registers ----------------
     static constexpr uint8_t LIS3MDL_I2C_ADDR  = 0x1C;
     static constexpr uint8_t WHO_AM_I_REG      = 0x0F;
