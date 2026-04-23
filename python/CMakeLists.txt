@@ -11,6 +11,7 @@ add_library(imupy MODULE
 target_include_directories(imupy PRIVATE
     ${CMAKE_SOURCE_DIR}/header
     ${PIGPIO_INCLUDE_DIR}
+    ${CMAKE_BINARY_DIR}   
 )
 
 target_link_libraries(imupy PRIVATE

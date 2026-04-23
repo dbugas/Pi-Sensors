@@ -5,15 +5,18 @@
 #include <cstdint>
 #include <vector>
 #include <cstring>
+#include <string>
 #include <cmath>
 #include <chrono>
 #include <atomic>
+#include <stdexcept>
 
 #include "gpio.h"
+#include "Parser.h"
 #define PI 3.141592653589793
-#define DEBUG_BMI088 // Uncomment for debug output
+//#define DEBUG_BMI088 // Uncomment for debug output
 
-class BMI088 : public gpio {
+class BMI088 : protected gpio {
     public:
         enum class AccelOversampling : uint8_t {
             OSR4   = 0x08,  // Strongest filtering (lowest bandwidth, least noise)
@@ -63,11 +66,13 @@ class BMI088 : public gpio {
             spi_gyro = spiOpenBus(CS_GYR, SPI_BAUD, SPI_FLAGS);
             if (spi_gyro < 0){
                 std::cerr << "[BMI088] SPI gyro open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
             }
             spi_acc = spiOpenBus(CS_ACC, SPI_BAUD, SPI_FLAGS);
 
             if (spi_acc < 0){
                 std::cerr << "[BMI088] SPI accel open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
             }
             // Verify gyro identity
             initGyro(BMI088::GyroRange::DPS_1000, BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz);
@@ -94,7 +99,6 @@ class BMI088 : public gpio {
                 std::cout << "[BMI088] Accel CHIP_ID: 0x"<< std::hex << int(id) << std::dec << "\n";
             #endif
 
-            initCalibrationMatrix();
         }
         BMI088(AccelRange accel_range, AccelODR accel_odr, AccelOversampling accel_osr, 
             GyroRange gyro_range, GyroBandwidth gyro_bandwidth){
@@ -102,11 +106,13 @@ class BMI088 : public gpio {
             spi_gyro = spiOpenBus(CS_GYR, SPI_BAUD, SPI_FLAGS);
             if (spi_gyro < 0){
                 std::cerr << "[BMI088] SPI gyro open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
             }
             spi_acc = spiOpenBus(CS_ACC, SPI_BAUD, SPI_FLAGS);
 
             if (spi_acc < 0){
                 std::cerr << "[BMI088] SPI accel open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
             }
             // Verify gyro identity
             initGyro(gyro_range, gyro_bandwidth);
@@ -118,8 +124,7 @@ class BMI088 : public gpio {
 
             if (id != BMI088_GYR_ID){
                 std::cerr << "[BMI088] Gyro not detected\n";
-                spiCloseBus(spi_gyro);
-                spiCloseBus(spi_acc);
+                throw std::runtime_error("BMI088 gyro not found!");
             }
 
             // Verify accel identity/needed for startup with spi
@@ -132,13 +137,52 @@ class BMI088 : public gpio {
 
             if (id != BMI088_ACC_ID){
                 std::cerr << "[BMI088] Accel not detected\n";
-                spiCloseBus(spi_gyro);
-                spiCloseBus(spi_acc);
+                throw std::runtime_error("BMI088 accel not found!");
             }
 
-            initCalibrationMatrix();
         }
+        BMI088(AccelRange accel_range, AccelODR accel_odr, AccelOversampling accel_osr, 
+            GyroRange gyro_range, GyroBandwidth gyro_bandwidth, Eigen::Matrix3d Cali_mat, Eigen::Vector3d Cali_offset) 
+            : calibMatrix(Cali_mat), Offset(Cali_offset) {
 
+            spi_gyro = spiOpenBus(CS_GYR, SPI_BAUD, SPI_FLAGS);
+            if (spi_gyro < 0){
+                std::cerr << "[BMI088] SPI gyro open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
+            }
+            spi_acc = spiOpenBus(CS_ACC, SPI_BAUD, SPI_FLAGS);
+
+            if (spi_acc < 0){
+                std::cerr << "[BMI088] SPI accel open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
+            }
+            // Verify gyro identity
+            initGyro(gyro_range, gyro_bandwidth);
+            uint8_t id = spiRead8(spi_gyro, BMI088_GYR_CHIP_ID);
+
+            #ifdef DEBUG_BMI088
+                std::cout << "[BMI088] Gyro CHIP_ID: 0x" << std::hex << int(id) << std::dec << "\n";
+            #endif
+
+            if (id != BMI088_GYR_ID){
+                std::cerr << "[BMI088] Gyro not detected\n";
+                throw std::runtime_error("BMI088 gyro not found!");
+            }
+
+            // Verify accel identity/needed for startup with spi
+            id = readAccelChipID();
+            initAccelerometer(accel_range, accel_odr, accel_osr);
+
+            #ifdef DEBUG_BMI088
+                std::cout << "[BMI088] Accel CHIP_ID: 0x"<< std::hex << int(id) << std::dec << "\n";
+            #endif
+
+            if (id != BMI088_ACC_ID){
+                std::cerr << "[BMI088] Accel not detected\n";
+                throw std::runtime_error("BMI088 accel not found!");
+            }
+
+        }
     bool readGyro(double& gx_dps, double& gy_dps, double& gz_dps) {
         int16_t gx_raw, gy_raw, gz_raw;
 
@@ -215,13 +259,12 @@ class BMI088 : public gpio {
         double ax_raw = 0.0, ay_raw = 0.0, az_raw = 0.0;
         if(!readAccel(ax_raw, ay_raw, az_raw)) return false;
 
-        double dx = ax_raw - Offset[0];
-        double dy = ay_raw - Offset[1];
-        double dz = az_raw - Offset[2];
+        Eigen::Vector3d a_raw(ax_raw, ay_raw, az_raw);
+        a_raw = calibMatrix*(a_raw - Offset);
 
-        ax = calibMatrix[0][0] * dx + calibMatrix[0][1] * dy + calibMatrix[0][2] * dz;
-        ay = calibMatrix[1][0] * dx + calibMatrix[1][1] * dy + calibMatrix[1][2] * dz;
-        az = calibMatrix[2][0] * dx + calibMatrix[2][1] * dy + calibMatrix[2][2] * dz;
+        ax = a_raw(0);
+        ay = a_raw(1);
+        az = a_raw(2);
 
         return true;
     }
@@ -333,6 +376,14 @@ class BMI088 : public gpio {
         spiWrite8(spi_gyro, BMI088_GYR_BANDWIDTH, val);
         gpioDelay(5000);
     }
+
+    void LoadCalibrationCoeffs(const std::string& file) {
+
+        Parser parse(file);
+        parse.loadVar("calibMatrix_acc", calibMatrix);
+        parse.loadVar("offset_acc", Offset);
+    }
+
     ~BMI088(){
         #ifdef DEBUG_BMI088
             std::cout << "Closing BMI088...\n";
@@ -401,19 +452,19 @@ class BMI088 : public gpio {
 
         switch (reg & 0x07) { 
         case 0x00:
-            scale = 2000.0 / 32768.0;   // ±2000 °/s = 16.384 LSB/°/s
+            scale = 2000.0 / 32768.0;   // +/-2000 °/s = 16.384 LSB/°/s
             break;
         case 0x01:
-            scale = 1000.0 / 32768.0;   // ±1000 °/s = 32.768 LSB/°/s
+            scale = 1000.0 / 32768.0;   // +/-1000 °/s = 32.768 LSB/°/s
             break;
         case 0x02:
-            scale = 500.0 / 32768.0;    // ±500 °/s  = 65.536 LSB/°/s
+            scale = 500.0 / 32768.0;    // +/-500 °/s  = 65.536 LSB/°/s
             break;
         case 0x03:
-            scale = 250.0 / 32768.0;    // ±250 °/s  = 131.072 LSB/°/s
+            scale = 250.0 / 32768.0;    // +/-250 °/s  = 131.072 LSB/°/s
             break;
         case 0x04:
-            scale = 125.0 / 32768.0;    // ±125 °/s  = 262.144 LSB/°/s
+            scale = 125.0 / 32768.0;    // +/-125 °/s  = 262.144 LSB/°/s
             break;
         default:
         #ifdef DEBUG_BMI088
@@ -456,54 +507,10 @@ class BMI088 : public gpio {
             0x00
         };
         char rx[2] = {0};
-
+ 
         spiTransfer(spi, tx, rx, 2);
         return static_cast<uint8_t>(rx[1]);
     }
-
-    void initCalibrationMatrix()
-    {
-        // R matrix
-        constexpr double R[3][3] = {
-            {0.71255252 ,-0.13878161, 0.68775619},
-            {-0.69090930, 0.03182244, 0.72224073},
-            {0.12211981 , 0.98981160, 0.07321034}
-        };
-
-        // S diagonal scaling
-        constexpr double S_diag[3][3] = {{1.10766793, 0.00000000, 0.00000000},
-                                         {0.00000000, 1.00533049, 0.00000000},
-                                         {0.00000000, 0.00000000, 0.87716575}};
-        double temp[3][3] = {0};
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                temp[i][j] = 0.0;
-                for (int k = 0; k < 3; ++k) {
-                    temp[i][j] += S_diag[i][k] * R[j][k];  
-                }
-            }
-        }
-
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                calibMatrix[i][j] = 0.0;
-                for (int k = 0; k < 3; ++k) {
-                    calibMatrix[i][j] += R[i][k]*temp[k][j];  
-                }
-            }
-        }
-        #ifdef DEBUG_BMI088
-        std::cout << "[BMI088] Calibration matrix (R*S*R^T):\n";
-        for (int i = 0; i < 3; ++i) {
-            std::cout << "  ";
-            for (int j = 0; j < 3; ++j) {
-                std::cout << calibMatrix[i][j] << (j<2 ? ", " : "");
-            }
-            std::cout << "\n";
-        }
-        #endif
-    }
-
 
     double acc_scale; // m/s
     double gyro_scale; // rad/s
@@ -512,12 +519,8 @@ class BMI088 : public gpio {
     int spi_acc = -1;
 
 
-    double calibMatrix[3][3] = {0};
-    static constexpr double Offset[3] = {
-        0.00474523,    
-        0.01032585,
-        -0.05219814
-    };
+    Eigen::Matrix3d calibMatrix = Eigen::Matrix3d::Zero();
+    Eigen::Vector3d Offset = Eigen::Vector3d::Zero();
     
     // --------------- Configuration ---------------
     static constexpr unsigned SPI_BAUD  = 6000000;   

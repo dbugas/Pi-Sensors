@@ -53,18 +53,19 @@ PYBIND11_MODULE(imupy, m) {
 
     /* -------- IMU Performance Mode -------- */
 
-    py::enum_<IMU::PerformanceMode>(m, "PerformanceMode")
-        .value("Ultra",  IMU::PerformanceMode::Ultra)
-        .value("High",   IMU::PerformanceMode::High)
-        .value("Medium", IMU::PerformanceMode::Medium)
-        .value("Low",    IMU::PerformanceMode::Low)
+    py::enum_<IMUConfig::PerformanceMode>(m, "PerformanceMode")
+        .value("Ultra",  IMUConfig::PerformanceMode::Ultra)
+        .value("High",   IMUConfig::PerformanceMode::High)
+        .value("Medium", IMUConfig::PerformanceMode::Medium)
+        .value("Low",    IMUConfig::PerformanceMode::Low)
+        .value("Custom", IMUConfig::PerformanceMode::Custom)
         .export_values();
 
     /* -------- IMU Class -------- */
 
     py::class_<IMU>(m, "IMU")
-        .def(py::init<IMU::PerformanceMode, bool, bool>(),
-             py::arg("PerformanceMode") = IMU::PerformanceMode::High,
+        .def(py::init<IMUConfig::PerformanceMode, bool, bool>(),
+             py::arg("PerformanceMode") = IMUConfig::PerformanceMode::High,
              py::arg("Use_Mag") = true,
              py::arg("Use_Barometer") = true)
 

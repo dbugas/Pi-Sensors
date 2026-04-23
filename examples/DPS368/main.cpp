@@ -7,7 +7,7 @@
 #include <iomanip>
 #include <thread>
 
-#include "dps368.h"
+#include "DPS368.h"
 
 int main() {
 

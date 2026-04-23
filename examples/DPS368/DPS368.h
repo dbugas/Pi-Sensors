@@ -58,7 +58,8 @@ class DPS368 : public gpio {
             readCalibrationCoefficients();
             setSensorConfig( prs_rate,  prs_osr, tmp_rate,  tmp_osr);
         }
-        bool  isMeasurementReady(bool& pressure_ready, bool& temp_ready) {
+        
+        bool isMeasurementReady(bool& pressure_ready, bool& temp_ready) {
             uint8_t meas_cfg;
             if (!readRegister(REG_MEAS_CFG, &meas_cfg)) {
                 std::cerr << "Failed to read measurement configuration register!" << std::endl;
@@ -75,7 +76,6 @@ class DPS368 : public gpio {
             #endif
             return pressure_ready || temp_ready;
         }
-
 
         bool readCalibrated(float& pressure_Pa, float& temperature_C)
         {

@@ -1,0 +1,32 @@
+# ____ Accelerometer calibration values ____
+
+calibMatrix_acc = [1 0 0;
+                   0 1 0;
+                   0 0 1]
+offset_acc = [0;0;0]                  
+
+#____ Magnetometer calibration values ____
+
+calibMatrix_mag = [1 0 0;
+                   0 1 0;
+                   0 0 1]
+offset_mag = [0;0;0]  
+
+# IMU Custom Config:
+#____ BMI088 Values ____
+
+accel_scale = 24        # Max acceleration (g), Options: 24, 12, 6, 3
+accel_odr   = 1600      # Accelerometer update rate (ODR Hz), Options: 1600, 800, 400, 200, 100, 50, 25, 12.5 
+accel_osr   = Normal    # Accelerometer oversampling, Options: Normal, OSR2, OSR4
+gyro_range  = 2000      # Max gyroscope range, Options: 2000, 1000, 500, 250, 125
+gyro_bw     = 2000_230  # Gyroscope update rate (ODR Hz_BW Hz), Options: 2000_532, 2000_230, 1000_116, 400_47, 200_64, 200_23, 100_32, 100_12
+
+#____ DPS368 Values ____
+# Note, not all combinations are possible. Error will be thrown when needed.
+pressureRate = 64       # Pressure update rate (Hz), Options: 128, 64, 32, 16, 8, 4, 2, 1
+pressureOSR = OSR8      # Pressure oversampling, Options: 128, 64, 32, 16, 8, 4, 2, 1
+tempRate = 1            # Temperature update rate (Hz), Options: 128, 64, 32, 16, 8, 4, 2, 1
+tempOSR = OSR1          # Temperature oversampling, Options: 128, 64, 32, 16, 8, 4, 2, 1
+
+#____ LIS2MDL Values ____
+mag_ODR = 100           # Magnetometer update rate (HZ), Options: 100, 50, 20, 10

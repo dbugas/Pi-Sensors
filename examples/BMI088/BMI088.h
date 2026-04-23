@@ -10,10 +10,12 @@
 #include <atomic>
 
 #include "gpio.h"
+#include "../../header/Parser.h"
+
 #define PI 3.141592653589793
 #define DEBUG_BMI088 // Uncomment for debug output
 
-class BMI088 : public gpio {
+class BMI088 : protected gpio  {
     public:
         enum class AccelOversampling : uint8_t {
             OSR4   = 0x08,  // Strongest filtering (lowest bandwidth, least noise)
@@ -59,19 +61,18 @@ class BMI088 : public gpio {
         };
 
         BMI088(){
-
             init_gpio();
 
             spi_gyro = spiOpenBus(CS_GYR, SPI_BAUD, SPI_FLAGS);
-            if (spi_gyro < 0)
-            {
+            if (spi_gyro < 0){
                 std::cerr << "[BMI088] SPI gyro open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
             }
             spi_acc = spiOpenBus(CS_ACC, SPI_BAUD, SPI_FLAGS);
 
-            if (spi_acc < 0)
-            {
+            if (spi_acc < 0){
                 std::cerr << "[BMI088] SPI accel open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
             }
             // Verify gyro identity
             initGyro(BMI088::GyroRange::DPS_1000, BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz);
@@ -81,23 +82,23 @@ class BMI088 : public gpio {
                 std::cout << "[BMI088] Gyro CHIP_ID: 0x" << std::hex << int(id) << std::dec << "\n";
             #endif
 
-            if (id != BMI088_GYR_ID)
-            {
+            if (id != BMI088_GYR_ID){
                 std::cerr << "[BMI088] Gyro not detected\n";
+                throw std::runtime_error("BMI088 gyro not found!");
             }
 
             // Verify accel identity/needed for startup with spi
             id = readAccelChipID();
+            if (id != BMI088_ACC_ID){
+                std::cerr << "[BMI088] Accel not detected\n";
+                throw std::runtime_error("BMI088 accel not found!");
+            }
+            
             initAccelerometer(BMI088::AccelRange::G_6, BMI088::AccelODR::ODR_800Hz, BMI088::AccelOversampling::Normal);
 
             #ifdef DEBUG_BMI088
                 std::cout << "[BMI088] Accel CHIP_ID: 0x"<< std::hex << int(id) << std::dec << "\n";
             #endif
-
-            if (id != BMI088_ACC_ID)
-            {
-                std::cerr << "[BMI088] Accel not detected\n";
-            }
 
             initCalibrationMatrix();
         }
@@ -106,15 +107,15 @@ class BMI088 : public gpio {
             init_gpio();
 
             spi_gyro = spiOpenBus(CS_GYR, SPI_BAUD, SPI_FLAGS);
-            if (spi_gyro < 0)
-            {
+            if (spi_gyro < 0){
                 std::cerr << "[BMI088] SPI gyro open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
             }
             spi_acc = spiOpenBus(CS_ACC, SPI_BAUD, SPI_FLAGS);
 
-            if (spi_acc < 0)
-            {
+            if (spi_acc < 0){
                 std::cerr << "[BMI088] SPI accel open failed\n";
+                throw std::runtime_error("BMI088 SPI failed to open!");
             }
             // Verify gyro identity
             initGyro(gyro_range, gyro_bandwidth);
@@ -124,27 +125,27 @@ class BMI088 : public gpio {
                 std::cout << "[BMI088] Gyro CHIP_ID: 0x" << std::hex << int(id) << std::dec << "\n";
             #endif
 
-            if (id != BMI088_GYR_ID)
-            {
+            if (id != BMI088_GYR_ID){
                 std::cerr << "[BMI088] Gyro not detected\n";
                 spiCloseBus(spi_gyro);
                 spiCloseBus(spi_acc);
+                throw std::runtime_error("BMI088 gyro not found!");
             }
 
             // Verify accel identity/needed for startup with spi
             id = readAccelChipID();
+
+            if (id != BMI088_ACC_ID){
+                std::cerr << "[BMI088] Accel not detected\n";
+                spiCloseBus(spi_gyro);
+                spiCloseBus(spi_acc);
+                throw std::runtime_error("BMI088 accel not found!");
+            }
             initAccelerometer(accel_range, accel_odr, accel_osr);
 
             #ifdef DEBUG_BMI088
                 std::cout << "[BMI088] Accel CHIP_ID: 0x"<< std::hex << int(id) << std::dec << "\n";
             #endif
-
-            if (id != BMI088_ACC_ID)
-            {
-                std::cerr << "[BMI088] Accel not detected\n";
-                spiCloseBus(spi_gyro);
-                spiCloseBus(spi_acc);
-            }
 
             initCalibrationMatrix();
         }

@@ -5,17 +5,25 @@
 #include <cmath>
 
 #include "LIS2MDL.h"
+#include "Parser.h"
 
 int main() {
 
-LISxMDL mag(
-    LISxMDL::ODR::ODR_100HZ
-    );
+    Eigen::Matrix3d calibMatrix = Eigen::Matrix3d::Zero();
+    Eigen::Vector3d offset = Eigen::Vector3d::Zero();
+
+    Parser par("config.txt");
+    par.loadVar("calibMatrix_mag", calibMatrix);
+    par.loadVar("offset_mag", offset);
+    std::cout << "calibMatrix: \n" << calibMatrix << "\n";
+    std::cout << "offset: \n" << offset << "\n";
+
+    LIS2MDL mag(LIS2MDL::ODR::ODR_100HZ, calibMatrix);
 
     std::this_thread::sleep_for(std::chrono::microseconds(11000));
     
     int counter = 0;
-    mag.setHardIronOffsets(2.0f,0.0f,0.0f);
+    mag.setHardIronOffsets(offset(0),offset(1),offset(2));
     while(counter < 10){
 
         if(mag.dataReady()){
@@ -30,4 +38,4 @@ LISxMDL mag(
 
     return 0;
 }
-// g++ -Wall -o main main.cpp -lpigpio -lrt -O2 -ftree-vectorize
+// g++ -Wall -o main main.cpp Parser.cpp -I /usr/include/eigen3 -lpigpio -lrt -O2 -ftree-vectorize

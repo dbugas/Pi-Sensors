@@ -9,10 +9,11 @@
 
 int main(){
 
-    IMU imu(IMU::PerformanceMode::High, false, false);
-    std::cout <<"here\n";
+    std::string path = static_cast<std::string>(SOURCE_DIR) + static_cast<std::string>("../asdf");
+    std::cout << path << "\n";
+    IMU imu(IMUConfig::PerformanceMode::Custom, false, false);
+    /*
     imu.init_PCA9685();
-    std::cout <<"here1\n";
     uint16_t on_vals[16] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0}; 
 
     int counter = 0; const int max_samples = 0;
@@ -44,6 +45,6 @@ int main(){
     }
 
     imu.stop_sensor_thread(); 
-
+    */
     return 1;
 }

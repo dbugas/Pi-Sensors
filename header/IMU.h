@@ -6,10 +6,12 @@
 #include <thread>
 #include <iostream>
 #include <atomic>
+#include <string>
+#include <stdexcept>
 
 #include "BMI088.h"
-#include "dps310.h"
-#include "LISxMDL.h"
+#include "DPS368.h"
+#include "LIS2MDL.h"
 #include "PCA9685.h"
 #include "ads1115.h"
 #include "vqf.h"
@@ -17,6 +19,9 @@
 #include "DataBuffer.h"
 #include "gpio.h"
 #include "srKF.h"
+#include "Parser.h"
+#include "IMUConfig.h"
+#include "imu_config.h"
 
 struct PWMval {
     std::array<uint16_t, 16> pwm_Val{};
@@ -25,7 +30,7 @@ struct PWMval {
 };
 
 struct AccelData {
-    double x, y, z;             // m/s
+    double x, y, z;             // m/s^2
     uint64_t timestamp_us = 0;
 };
 
@@ -53,175 +58,71 @@ struct QuatData {
 
 class IMU : protected gpio {
     public:
-    enum class PerformanceMode {
-        Ultra,      // Highest ODR + widest bandwidth (~200–500 Hz cutoff). Very low latency, captures fastest dynamics & vibrations, higher noise & power.
-        High,       // High ODR + wide bandwidth (~100–230 Hz cutoff). Excellent for most dynamic applications (drones, robotics).
-        Medium,     // Moderate ODR + bandwidth (~40–145 Hz cutoff). Balanced response for general motion, lower noise & CPU load.
-        Low         // Lowest ODR + narrowest bandwidth (~10–40 Hz cutoff) Lowest noise & power, suited for slow/static or battery-critical apps.
-    };
-
-        IMU(PerformanceMode mode, bool use_mag, bool use_barometer){
+        IMU(IMUConfig::PerformanceMode mode, bool use_mag, bool use_barometer){
 
             init_gpio();
-            int pressureRate = 16;
-            int pressureOversampling = 16;
-            int tempRate = 1;
-            int tempOversampling = 1;
-            BMI088::AccelRange accel_scale = BMI088::AccelRange::G_12;
-            BMI088::AccelODR accel_odr = BMI088::AccelODR::ODR_800Hz;
-            BMI088::AccelOversampling accel_osr = BMI088::AccelOversampling::Normal;
-            BMI088::GyroRange gyro_range = BMI088::GyroRange::DPS_1000;
-            BMI088::GyroBandwidth gyro_bw = BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz;
-            LISxMDL::FullScale mag_scale  =LISxMDL::FullScale::Gauss_8;
-            LISxMDL::ODR mag_odr = LISxMDL::ODR::Hz_80;
+            IMUSettings settings;
+            Eigen::Matrix3d calibMatrix = Eigen::Matrix3d::Zero();
+            Eigen::Vector3d Offset = Eigen::Vector3d::Zero();
+            std::string path = SOURCE_DIR "/IMUconfig.cfg";
+            std::cout << path << "\n";
 
-            // in microseconds
-            int bmi_accel_timer_val = 1250;
-            int bmi_gyro_timer_val  = 1000;
-            int mag_timer_val       = 12500;
-            int dps_timer_val       = 32000;
-            int quat_timer_val      = 1000;    
-            delay = 50;
+            parser = std::make_unique<Parser>(path);  
+            parser->loadVar("calibMatrix_acc", calibMatrix);
+            parser->loadVar("offset_acc", Offset);
+            
+            IMUConfig config(*parser);
+            settings = config.load(mode);
+            delay = settings.delay_us;
 
-            switch(mode){
-                case PerformanceMode::Ultra:
-                    accel_scale = BMI088::AccelRange::G_24;   
-                    accel_odr   = BMI088::AccelODR::ODR_1600Hz;
-                    accel_osr   = BMI088::AccelOversampling::Normal;
-                    gyro_range  = BMI088::GyroRange::DPS_2000;
-                    gyro_bw     = BMI088::GyroBandwidth::ODR_2000Hz_BW_230Hz;
+            /*
+            bmi088_ = std::make_unique<BMI088>(settings.accel_scale, settings.accel_odr, settings.accel_osr, 
+                                                settings.gyro_scale, settings.gyro_odr, calibMatrix, Offset);
 
-                    pressureRate         = 64;
-                    pressureOversampling = 8;
-                    tempRate             = 1;
-                    tempOversampling     = 1;
+            parser->loadVar("calibMatrix_mag", calibMatrix);
+            parser->loadVar("offset_mag", Offset);
 
-                    mag_scale = LISxMDL::FullScale::Gauss_8;
-                    mag_odr   = LISxMDL::ODR::Hz_155;
-
-                    bmi_accel_timer_val = 625;
-                    bmi_gyro_timer_val  = 500;
-                    mag_timer_val       = 6451;
-                    dps_timer_val       = 14100;
-                    quat_timer_val      = 625;
-                    delay = 50;
-                    break;
-
-                case PerformanceMode::High:
-                    accel_scale = BMI088::AccelRange::G_12;   
-                    accel_odr   = BMI088::AccelODR::ODR_800Hz;
-                    accel_osr   = BMI088::AccelOversampling::Normal;
-                    gyro_range  = BMI088::GyroRange::DPS_1000;
-                    gyro_bw     = BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz;
-
-                    pressureRate         = 32;
-                    pressureOversampling = 16;
-                    tempRate             = 1;
-                    tempOversampling     = 1;
-
-                    mag_scale = LISxMDL::FullScale::Gauss_8;
-                    mag_odr   = LISxMDL::ODR::Hz_80;
-
-                    bmi_accel_timer_val = 1250;
-                    bmi_gyro_timer_val  = 1000;
-                    mag_timer_val       = 12500;
-                    dps_timer_val       = 27600;
-                    quat_timer_val      = 1000;
-                    delay = 50;
-                    break;
-
-                case PerformanceMode::Medium:
-                    accel_scale = BMI088::AccelRange::G_6;   
-                    accel_odr   = BMI088::AccelODR::ODR_400Hz;
-                    accel_osr   = BMI088::AccelOversampling::Normal;
-                    gyro_range  = BMI088::GyroRange::DPS_1000;
-                    gyro_bw     = BMI088::GyroBandwidth::ODR_400Hz_BW_47Hz;
-
-                    pressureRate         = 32;
-                    pressureOversampling = 16;
-                    tempRate             = 1;
-                    tempOversampling     = 1;
-
-                    mag_scale = LISxMDL::FullScale::Gauss_4;
-                    mag_odr   = LISxMDL::ODR::Hz_40;
-
-                    bmi_accel_timer_val = 2500;
-                    bmi_gyro_timer_val  = 2500;
-                    mag_timer_val       = 25000;
-                    dps_timer_val       = 27600;
-                    quat_timer_val      = 2500;
-                    delay = 250;
-                    break;
-
-                case PerformanceMode::Low:
-                    accel_scale = BMI088::AccelRange::G_3;   
-                    accel_odr   = BMI088::AccelODR::ODR_100Hz;
-                    accel_osr   = BMI088::AccelOversampling::OSR2;
-                    gyro_range  = BMI088::GyroRange::DPS_250;
-                    gyro_bw     = BMI088::GyroBandwidth::ODR_200Hz_BW_64Hz;
-
-                    pressureRate         = 8;
-                    pressureOversampling = 64;
-                    tempRate             = 1;
-                    tempOversampling     = 1;
-
-                    mag_scale = LISxMDL::FullScale::Gauss_4;
-                    mag_odr   = LISxMDL::ODR::Hz_20;
-
-                    bmi_accel_timer_val = 10000;
-                    bmi_gyro_timer_val  = 5000;
-                    mag_timer_val       = 50000;
-                    dps_timer_val       = 1011000;
-                    quat_timer_val      = 5000;
-                    delay = 500;
-                    break;
+            if(use_barometer) dps368_ = std::make_unique<DPS368>(settings.PressureODR, settings.PressureOSR, settings.TempODR, settings.TempOSR);
+            if(use_mag) {
+                mag_ = std::make_unique<LIS2MDL>(settings.magODR, calibMatrix);
+                mag_->setHardIronOffsets(Offset(0),Offset(1),Offset(2));
             }
 
-            bmi088_ = std::make_unique<BMI088>(accel_scale, accel_odr, accel_osr, gyro_range, gyro_bw);
-            if(use_barometer) dps310_ = std::make_unique<DPS310>(pressureRate, pressureOversampling, tempRate, tempOversampling);
-            if(use_mag)       mag_    = std::make_unique<LISxMDL>(mag_scale, mag_odr);
-
-            vqf = std::make_unique<VQF>((double)bmi_gyro_timer_val*1e-6, 
-                                        (double)bmi_accel_timer_val*1e-6, 
-                                        (double)mag_timer_val*1e-6);
+            vqf = std::make_unique<VQF>((double)settings.gyro_timer_us*1e-6, 
+                                        (double)settings.accel_timer_us*1e-6, 
+                                        (double)settings.mag_timer_us*1e-6);
             vqf->setTauAcc(0.4);                 
 
-            bmi_accel_timer       = std::make_unique<Timer>(std::chrono::microseconds(bmi_accel_timer_val));
-            bmi_gyro_timer        = std::make_unique<Timer>(std::chrono::microseconds(bmi_gyro_timer_val));
-            quat_timer            = std::make_unique<Timer>(std::chrono::microseconds(quat_timer_val));
-            if(use_mag) mag_timer = std::make_unique<Timer>(std::chrono::microseconds(mag_timer_val));
+            bmi_accel_timer       = std::make_unique<Timer>(std::chrono::microseconds(settings.accel_timer_us));
+            bmi_gyro_timer        = std::make_unique<Timer>(std::chrono::microseconds(settings.gyro_timer_us));
+            quat_timer            = std::make_unique<Timer>(std::chrono::microseconds(settings.quat_timer_us));
+            if(use_mag) mag_timer = std::make_unique<Timer>(std::chrono::microseconds(settings.mag_timer_us));
             if(use_barometer) {
-                dps_timer = std::make_unique<Timer>(std::chrono::microseconds(dps_timer_val));
+                dps_timer = std::make_unique<Timer>(std::chrono::microseconds(settings.dps_timer_us));
 
                 int counter = 0;
                 int timeout = 0;
                 double avg = 0.0;
+                double pressure_Pa = 0.0;
+                double temperature_C = 0.0;
+                double altitude_m = 0.0;
 
                 dps_timer->start(true);
                 while(counter < 10){
                     if(!dps_timer->check()) {
                         continue;
                     }
-                    if (dps310_->isMeasurementReady(ispressureRDY, istempRDY)){
-                            double pressure_Pa = 0.0;
-                            double temperature_C = 0.0;
-                            double altitude_m = 0.0;
-                            bool ok = dps310_->readData(pressure_Pa, temperature_C,
-                                                        istempRDY, ispressureRDY);
-                            if(ok){
-                                dps310_->calculateAltitudeChange(pressure_Pa, temperature_C,
-                                                    altitude_m, altitude_change);
-                                avg += altitude_m;
-                                counter++;
-                            }
-                            else timeout++;
+                    if (dps368_->readCalibrated_ifnew(pressure_Pa, temperature_C)){
+                            altitude_m = dps368_->calculateAltitude(pressure_Pa, temperature_C);
+                            avg += altitude_m;
+                            counter++;
                     }
-                    else dps_timer->set(true);
+                    else dps_timer->set(true); // jitter compensation
                     
                     if(timeout > 100){
-                        std::cout << "DPS310 setup failed \n";
+                        std::cout << "DPS368 setup failed \n";
                         dps_timer->stop();
-                        dps310_.reset();
+                        dps368_.reset();
                         break;
                     }
                     
@@ -232,9 +133,9 @@ class IMU : protected gpio {
                 EKF = std::make_unique<srKF>(
                     Eigen::Matrix4d{{1,0,0,0}, {0,0.5,0,0}, {0,0,0.1,0}, {0,0,0,0.05}},
                     Eigen::Matrix<double,1,1>{{10.0}},
-                    compute_process_noise_approx((double)bmi_accel_timer_val*1e-6, 0.01, 0.0001),
+                    compute_process_noise_approx((double)settings.accel_timer_us*1e-6, 0.01, 0.0001),
                     Eigen::Vector4d{altitude0,0,0,0.01},
-                    (double)bmi_accel_timer_val*1e-6
+                    (double)settings.accel_timer_us*1e-6
                 );
 
             }
@@ -245,6 +146,7 @@ class IMU : protected gpio {
             std::this_thread::sleep_for(std::chrono::microseconds(500));
             if(use_mag) mag_timer->start(true);
             quat_timer->start(true);
+            */
         }
 
         bool update_accel_raw() {
@@ -280,7 +182,7 @@ class IMU : protected gpio {
                 accel_buffer_.commit();
                 has_new_accel_.store(true, std::memory_order_release);
                 
-                if(dps310_){
+                if(dps368_){
                     // Update EKF with new accel data
                     const QuatData* quat = latest_quat();
                     Eigen::Quaterniond q(quat->q[0], quat->q[1], quat->q[2], quat->q[3]);
@@ -364,12 +266,11 @@ class IMU : protected gpio {
         bool update_baro() {
             if(!dps_timer->check()) return false;
 
-            if (dps310_->isMeasurementReady(ispressureRDY, istempRDY)){
+            if (dps368_->isMeasurementReady(ispressureRDY, istempRDY)){
 
                 BaroData* slot = baro_buffer_.prepare_write();
 
-                bool ok = dps310_->readData(slot->pressure_Pa, slot->temperature_C,
-                                            istempRDY, ispressureRDY);
+                bool ok = dps368_->readCalibrated(slot->pressure_Pa, slot->temperature_C);
 
                 if (ok) {
                     EKF->KF_update_alt(Eigen::VectorXd::Constant(1, slot->pressure_Pa), slot->temperature_C + 273.15);
@@ -386,7 +287,7 @@ class IMU : protected gpio {
                     return true;
                 }
             }
-            else dps_timer->set(true);
+            else dps_timer->set(true); // jitter compensation
  
             return false;
         }
@@ -530,7 +431,7 @@ class IMU : protected gpio {
             update_gyro();
             update_accel();
             if (mag_ != nullptr) update_mag();
-            if (dps310_ != nullptr) update_baro();
+            if (dps368_ != nullptr) update_baro();
         }
 
         ~IMU(){
@@ -539,8 +440,9 @@ class IMU : protected gpio {
 
             bmi088_.reset();
             vqf.reset();
+            if(parser) parser.reset();
             if(mag_) mag_.reset();
-            if(dps310_) dps310_.reset();
+            if(dps368_) dps368_.reset();
             if(pwm_) {
                 pwm_->setPWMMultiple(0, 8, on_vals, on_vals); // set all pwm channels to 0
                 pwm_->setPWMMultiple(8, 8, on_vals, on_vals);
@@ -551,7 +453,7 @@ class IMU : protected gpio {
             bmi_gyro_timer->stop();
             quat_timer->stop();
             if(mag_) mag_timer->stop();
-            if(dps310_) dps_timer->stop();
+            if(dps368_) dps_timer->stop();
 
             close_gpio();
         }
@@ -647,9 +549,9 @@ class IMU : protected gpio {
         GyroData gydat;
         MagData magdat;
 
-        std::unique_ptr<DPS310> dps310_;
+        std::unique_ptr<DPS368> dps368_;
         std::unique_ptr<BMI088> bmi088_;
-        std::unique_ptr<LISxMDL> mag_;
+        std::unique_ptr<LIS2MDL> mag_;
         std::unique_ptr<PCA9685> pwm_;
 
         std::unique_ptr<Timer> bmi_gyro_timer;
@@ -682,4 +584,6 @@ class IMU : protected gpio {
         // sensor readings
         std::atomic<bool> running = false;
         std::thread sensor_update_thread;
+
+        std::unique_ptr<Parser> parser;
 };
