@@ -1,6 +1,6 @@
 #include "gpio.h"
 
-bool gpio::init_pin(int pin, PIN_IO IO)
+bool gpio::init_pin(unsigned pin, PIN_IO IO)
 {
     if(IO == PIN_IO::OUT){
         gpioResult = gpioSetMode(pin, PI_OUTPUT);

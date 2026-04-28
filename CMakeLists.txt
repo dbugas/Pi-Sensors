@@ -46,7 +46,7 @@ target_link_libraries(imu PRIVATE
 )
 
 target_compile_options(imu PRIVATE
-    -Wall -Wextra -O2 -pthread
+    -Wall -Wextra -O3 -pthread
 )
 
 set_target_properties(imu PROPERTIES

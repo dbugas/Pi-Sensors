@@ -16,31 +16,55 @@ class gpio
                   OUT // for output signals, ie LEDs
                 };
 
-        bool init_pin(int pin, PIN_IO IO); // GPIO pins in only 
+        bool init_pin(unsigned pin, PIN_IO IO); // GPIO pins in only 
         bool init_uart(int baud);
         bool init_pwm(int GPIO_pin, int pwm_val = 0);
         // --- I2C Functions ---
-        int  i2cOpenBus(unsigned bus, unsigned addr) { return i2cOpen(bus, addr, 0); }
+        int i2cOpenBus(unsigned bus, unsigned addr) { return i2cOpen(bus, addr, 0); }
         void i2cCloseBus(int handle) { if (handle >= 0) i2cClose(handle); }
-        int  i2cWriteByte(int handle, uint8_t reg, uint8_t val) {
+        int i2cWriteByte(int handle, uint8_t reg, uint8_t val) {
             return i2cWriteByteData(handle, reg, val);
         }
-        int  i2cReadByte(int handle, uint8_t reg) {
+        int i2cReadByte(int handle, uint8_t reg) {
             return i2cReadByteData(handle, reg);
         }
-        int  i2cReadBlock(int handle, uint8_t reg, char* buf, unsigned n) {
+        int i2cReadBlock(int handle, uint8_t reg, char* buf, unsigned n) {
             return i2cReadI2CBlockData(handle, reg, buf, n);
         }
         int i2cWriteBlock(int handle, uint8_t reg, char* buf, unsigned n) {
             return i2cWriteI2CBlockData(handle, reg, buf, n);
         }
         // --- SPI Functions ---
-        int  spiOpenBus(unsigned channel, unsigned baud, unsigned flags) {
+        int spiOpenBus(unsigned channel, unsigned baud, unsigned flags) {
             return spiOpen(channel, baud, flags);
         }
+        int spiOpenBus(unsigned channel, unsigned baud, unsigned flags, unsigned cs) {
+            gpioSetMode(cs, PI_OUTPUT);
+            gpioWrite(cs, 0); 
+            flags = flags | 0xE0; // disable hardware cs pins
+
+            int status = spiOpen(0, baud, flags);
+            gpioWrite(cs, 1); 
+
+            return status;
+        }
         void spiCloseBus(int handle) { if (handle >= 0) spiClose(handle); }
-        int  spiTransfer(int handle, char* tx, char* rx, unsigned n) {
+        int spiTransfer(int handle, char* tx, char* rx, unsigned n) {
             return spiXfer(handle, tx, rx, n);
+        }
+        int spiTransfer(int handle, const char* tx, char* rx, unsigned n, unsigned cs){
+            if (cs > 31) return PI_BAD_GPIO;
+        
+            uint32_t mask = 1u << cs;
+        
+            gpioWrite_Bits_0_31_Clear(mask);
+            //gpioWrite(cs, 0); 
+        
+            int status = spiXfer(handle, (char*)tx, rx, n);
+            gpioWrite_Bits_0_31_Set(mask);
+            //gpioWrite(cs, 1); 
+        
+            return status;
         }
         ~gpio()
         {

@@ -104,7 +104,7 @@ public:
         }
 
         settings.quat_timer_us = std::min({settings.accel_timer_us, settings.gyro_timer_us, settings.mag_timer_us });
-        settings.delay_us = std::round((double)std::min({settings.accel_timer_us, settings.gyro_timer_us, settings.mag_timer_us, settings.dps_timer_us}) / 10.0);
+        settings.delay_us = std::round((double)std::min({settings.quat_timer_us, settings.dps_timer_us}) / 10.0);
 
         return settings;
     }
@@ -201,7 +201,6 @@ public:
                     break;
                 case PerformanceMode::Custom:
                         settings = loadfromfile();
-
                     break;
             }
 
@@ -221,8 +220,8 @@ private:
 
     static constexpr std::pair<const char*, BMI088::AccelOversampling> accelOSRTable[] = {
         {"Normal", BMI088::AccelOversampling::Normal},
-        {"OSR2", BMI088::AccelOversampling::OSR2},
-        {"OSR4",  BMI088::AccelOversampling::OSR4}
+        {"OSR2",   BMI088::AccelOversampling::OSR2},
+        {"OSR4",   BMI088::AccelOversampling::OSR4}
     };
 
     struct AccelOdrConfig {
@@ -256,11 +255,11 @@ private:
         {"2000_532", {BMI088::GyroBandwidth::ODR_2000Hz_BW_532Hz, 500}},
         {"2000_230", {BMI088::GyroBandwidth::ODR_2000Hz_BW_230Hz, 500}},
         {"1000_116", {BMI088::GyroBandwidth::ODR_1000Hz_BW_116Hz, 1000}},
-        {"400_47", {BMI088::GyroBandwidth::ODR_400Hz_BW_47Hz, 2500}},
-        {"200_23", {BMI088::GyroBandwidth::ODR_200Hz_BW_23Hz, 5000}},
-        {"100_12", {BMI088::GyroBandwidth::ODR_100Hz_BW_12Hz, 10000}},
-        {"200_64", {BMI088::GyroBandwidth::ODR_200Hz_BW_64Hz, 5000}},
-        {"100_32", {BMI088::GyroBandwidth::ODR_100Hz_BW_32Hz, 10000}}
+        {"400_47",   {BMI088::GyroBandwidth::ODR_400Hz_BW_47Hz, 2500}},
+        {"200_23",   {BMI088::GyroBandwidth::ODR_200Hz_BW_23Hz, 5000}},
+        {"100_12",   {BMI088::GyroBandwidth::ODR_100Hz_BW_12Hz, 10000}},
+        {"200_64",   {BMI088::GyroBandwidth::ODR_200Hz_BW_64Hz, 5000}},
+        {"100_32",   {BMI088::GyroBandwidth::ODR_100Hz_BW_32Hz, 10000}}
     };
 
     // DPS368
@@ -270,25 +269,25 @@ private:
     };
 
     static constexpr std::pair<const char*, DPSOdrConfig> dpsOdrTable[] = {
-        {"1", {DPS368::MeasurementRate::Hz1, 1000000}},
-        {"2", {DPS368::MeasurementRate::Hz2, 500000}},
-        {"4", {DPS368::MeasurementRate::Hz4, 250000}},
+        {"1",   {DPS368::MeasurementRate::Hz1, 1000000}},
+        {"2",   {DPS368::MeasurementRate::Hz2, 500000}},
+        {"4",   {DPS368::MeasurementRate::Hz4, 250000}},
         {"8",   {DPS368::MeasurementRate::Hz8, 125000}},
-        {"16",   {DPS368::MeasurementRate::Hz16, 62500}},
-        {"32",   {DPS368::MeasurementRate::Hz32, 31250}},
-        {"64",   {DPS368::MeasurementRate::Hz64, 15625}},
-        {"128",   {DPS368::MeasurementRate::Hz128, 7813}}
+        {"16",  {DPS368::MeasurementRate::Hz16, 62500}},
+        {"32",  {DPS368::MeasurementRate::Hz32, 31250}},
+        {"64",  {DPS368::MeasurementRate::Hz64, 15625}},
+        {"128", {DPS368::MeasurementRate::Hz128, 7813}}
     };
 
     static constexpr std::pair<const char*, DPS368::OversamplingRate> dpsOSRTable[] = {
-        {"1", DPS368::OversamplingRate::OSR1},
-        {"2", DPS368::OversamplingRate::OSR2},
-        {"4",  DPS368::OversamplingRate::OSR4},
-        {"8",  DPS368::OversamplingRate::OSR8},
+        {"1",   DPS368::OversamplingRate::OSR1},
+        {"2",   DPS368::OversamplingRate::OSR2},
+        {"4",   DPS368::OversamplingRate::OSR4},
+        {"8",   DPS368::OversamplingRate::OSR8},
         {"16",  DPS368::OversamplingRate::OSR16},
         {"32",  DPS368::OversamplingRate::OSR32},
         {"64",  DPS368::OversamplingRate::OSR64},
-        {"128",  DPS368::OversamplingRate::OSR128},
+        {"128", DPS368::OversamplingRate::OSR128},
     };
 
     // LIS2MDL
@@ -298,10 +297,10 @@ private:
     };
 
     static constexpr std::pair<const char*, MagOdrConfig> magOdrTable[] = {
-        {"10", {LIS2MDL::ODR::ODR_10HZ, 100000}},
-        {"20", {LIS2MDL::ODR::ODR_20HZ, 50000}},
-        {"50", {LIS2MDL::ODR::ODR_50HZ, 20000}},
-        {"100",   {LIS2MDL::ODR::ODR_100HZ, 10000}}
+        {"10",  {LIS2MDL::ODR::ODR_10HZ, 100000}},
+        {"20",  {LIS2MDL::ODR::ODR_20HZ, 50000}},
+        {"50",  {LIS2MDL::ODR::ODR_50HZ, 20000}},
+        {"100", {LIS2MDL::ODR::ODR_100HZ, 10000}}
 
     };
 

@@ -21,9 +21,9 @@ public:
     LIS2MDL(ODR odr) {
 
         init_gpio();
-        handle_ = spiOpen(CS, SPI_BAUD, SPI_FLAGS );
+        handle_ = spiOpenBus(CS, SPI_BAUD, SPI_FLAGS, CS);
         if (handle_ < 0) {
-            std::cerr << "[LIS2MDL] Failed to open device\n";
+            std::cerr << "[LIS2MDL] Failed to open device, handle =" << handle_ << "\n";
         }
 
         writeRegister(CFG_REG_C, 0x34);   // 4WSPI + I2C_DIS + BDU           
@@ -52,9 +52,9 @@ public:
     LIS2MDL(ODR odr, Eigen::Matrix3d Cali_mat) : calibMatrix(Cali_mat) {
 
         init_gpio();
-        handle_ = spiOpen(CS, SPI_BAUD, SPI_FLAGS );
+        handle_ = spiOpenBus(CS, SPI_BAUD, SPI_FLAGS, CS);
         if (handle_ < 0) {
-            std::cerr << "[LIS2MDL] Failed to open device\n";
+            std::cerr << "[LIS2MDL] Failed to open device, handle =" << handle_ << "\n";
         }
 
         writeRegister(CFG_REG_C, 0x34);   // 4WSPI + I2C_DIS + BDU           
@@ -84,7 +84,7 @@ public:
     ~LIS2MDL() {
         if (handle_ >= 0) {
             writeRegister(CFG_REG_A, 0b10000011); // power-down
-            spiClose(handle_);
+            spiCloseBus(handle_);
             close_gpio();
         }
     }
@@ -96,7 +96,7 @@ public:
         uint8_t tx[7] = {OUT_X_L | 0xC0, 0, 0, 0, 0, 0, 0};  // 0xC0 = read + auto-increment
         uint8_t rx[7] = {0};
 
-        if (spiXfer(handle_, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 7) != 7) {
+        if (spiTransfer(handle_, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 7u, CS) != 7) {
             return false;
         }
 
@@ -133,7 +133,7 @@ public:
         return true;
     }
 
-    bool dataReady() const {
+    bool dataReady() {
         int status = readRegister(STATUS_REG);
         return (status & 0x08) != 0;
     }
@@ -158,7 +158,7 @@ public:
         tx[5] = static_cast<uint8_t>(raw_z & 0xFF);         // Z low
         tx[6] = static_cast<uint8_t>((raw_z >> 8) & 0xFF);  // Z high
 
-        spiXfer(handle_, reinterpret_cast<char*>(tx), nullptr, 7);
+        spiTransfer(handle_, reinterpret_cast<char*>(tx), nullptr, 7u, CS);
         #ifdef DEBUG_LIS2MDL
             std::printf("[LIS2MDL] Hard-iron offsets set: X=%.3f g, Y=%.3f g, Z=%.3f g\n", 
                         offset_x, offset_y, offset_z);
@@ -168,26 +168,26 @@ public:
     }
 private:
 
-uint8_t readRegister(uint8_t reg) const {
-    if (handle_ < 0) return 0;
-
-    uint8_t tx[2] = {static_cast<uint8_t>(reg | 0x80), 0x00};
-    uint8_t rx[2] = {0};
-
-    int result = spiXfer(handle_, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 2);
+    uint8_t readRegister(uint8_t reg) {
+        if (handle_ < 0) return 0;
     
-    #ifdef DEBUG_LIS2MDL
-        std::printf("[LIS2MDL] Read reg 0x%02X → rx[0]=0x%02X, rx[1]=0x%02X (result=%d)\n", 
-                    reg, rx[0], rx[1], result);
-    #endif
-
-    return rx[1];
-}
+        uint8_t tx[2] = {static_cast<uint8_t>(reg | 0x80), 0x00};
+        uint8_t rx[2] = {0};
+    
+        int result = spiTransfer(handle_, reinterpret_cast<char*>(tx), reinterpret_cast<char*>(rx), 2u, CS);
+        
+        #ifdef DEBUG_LIS2MDL
+            std::printf("[LIS2MDL] Read reg 0x%02X → rx[0]=0x%02X, rx[1]=0x%02X (result=%d)\n", 
+                        reg, rx[0], rx[1], result);
+        #endif
+            
+        return rx[1];
+    }
 
     void writeRegister(uint8_t reg, uint8_t value) {
             uint8_t tx[2] = {
         static_cast<uint8_t>(reg & 0x7F), value};
-    int result = spiXfer(handle_, reinterpret_cast<char*>(tx), nullptr, 2);
+    int result = spiTransfer(handle_, reinterpret_cast<char*>(tx), nullptr, 2u, CS);
         gpioDelay(1000);
     }
 
@@ -196,7 +196,7 @@ uint8_t readRegister(uint8_t reg) const {
 
     static constexpr unsigned SPI_BAUD  = 6000000;   
     static constexpr unsigned SPI_FLAGS = 0;
-    static constexpr unsigned CS        = 0;
+    static constexpr unsigned CS        = 23;
 
     // ---------------- Registers ----------------
     static constexpr uint8_t LIS3MDL_I2C_ADDR  = 0x1C;

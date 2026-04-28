@@ -10,7 +10,7 @@
 
 #include "gpio.h"
 
-#define DEBUG_DPS368
+//#define DEBUG_DPS368
 
 class DPS368 : public gpio {
     public:
@@ -42,7 +42,7 @@ class DPS368 : public gpio {
             MeasurementRate tmp_rate, OversamplingRate tmp_osr){
             init_gpio();
 
-            handle = spiOpen(CS, SPI_BAUD, SPI_FLAGS);
+            handle = spiOpenBus(CS, SPI_BAUD, SPI_FLAGS, CS);
 
             uint8_t id;
             if (!readRegister(REG_PROD_ID, &id)) return;
@@ -138,16 +138,15 @@ class DPS368 : public gpio {
         ~DPS368() {
             enterLowPowerMode();
             if (handle >= 0) {
-                spiClose(handle);
+                spiCloseBus(handle);
             }
-            close_gpio();
         }
     private:
 
         int handle = -1;
         static constexpr unsigned SPI_BAUD  = 6000000;   
-        static constexpr unsigned SPI_FLAGS = 3;
-        static constexpr unsigned CS        = 1;
+        static constexpr unsigned SPI_FLAGS = 0;
+        static constexpr unsigned CS        = 24;
 
         // Register definitions
         static constexpr uint8_t REG_PROD_ID = 0x0D; // Product ID register
@@ -210,7 +209,7 @@ class DPS368 : public gpio {
             tx[0] = reg & 0x7F;
             tx[1] = value;
         
-            spiWrite(handle, tx, 2);
+            spiTransfer(handle, tx, nullptr, 2u, CS);
         }
         bool readRegister(uint8_t reg, uint8_t* value)
         {
@@ -220,7 +219,7 @@ class DPS368 : public gpio {
             tx[0] = reg | 0x80;
             tx[1] = 0x00;
 
-            int result = spiXfer(handle, tx, rx, 2);
+            int result = spiTransfer(handle, tx, rx, 2u, CS);
 
             if (result < 0)
                 return false;
@@ -228,14 +227,14 @@ class DPS368 : public gpio {
             *value = static_cast<uint8_t>(rx[1]);
             return true;
         }
-        bool readRegisters(int spi, uint8_t startReg, uint8_t* buffer, int length)
+        bool readRegisters(uint8_t startReg, uint8_t* buffer, unsigned length)
         {
             std::vector<char> tx(length + 1, 0);
             std::vector<char> rx(length + 1, 0);
         
             tx[0] = startReg | 0x80; // read bit
         
-            int result = spiXfer(spi, tx.data(), rx.data(), length + 1);
+            int result = spiTransfer(handle, tx.data(), rx.data(), length + 1u, CS);
         
             if (result < 0) return false;
         
@@ -251,7 +250,7 @@ class DPS368 : public gpio {
         {
             uint8_t coeff_data[18];
         
-            if (!readRegisters(handle, REG_COEFF, coeff_data, 18))
+            if (!readRegisters(REG_COEFF, coeff_data, 18u))
             {
                 return false;
             }
@@ -305,7 +304,7 @@ class DPS368 : public gpio {
             uint8_t buffer[6];
         
             // Read pressure (0x00–0x02) + temperature (0x03–0x05)
-            if (!readRegisters(handle, REG_PSR_B2, buffer, 6))
+            if (!readRegisters(REG_PSR_B2, buffer, 6u))
                 return false;
         
             // Pressure (24-bit signed)
@@ -400,8 +399,8 @@ class DPS368 : public gpio {
                     " Hz, Oversampling = " + std::to_string(temp_oversampling_rate) +
                     "x, Total Time = " + std::to_string(temp_total_time) + " ms\n" +
                     "Total time (" + std::to_string(total_time) +
-                    " ms) exceeds 1000 ms. Must satisfy (Pressure Rate × Pressure Measurement Time) + "
-                    "(Temperature Rate × Temperature Measurement Time) <= 1000 ms."
+                    " ms) exceeds 1000 ms. Must satisfy (Pressure Rate x Pressure Measurement Time) + "
+                    "(Temperature Rate x Temperature Measurement Time) <= 1000 ms."
                 );
             }
         }

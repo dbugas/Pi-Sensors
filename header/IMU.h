@@ -64,10 +64,8 @@ class IMU : protected gpio {
             IMUSettings settings;
             Eigen::Matrix3d calibMatrix = Eigen::Matrix3d::Zero();
             Eigen::Vector3d Offset = Eigen::Vector3d::Zero();
-            std::string path = SOURCE_DIR "/IMUconfig.cfg";
-            std::cout << path << "\n";
 
-            parser = std::make_unique<Parser>(path);  
+            parser = std::make_unique<Parser>(SOURCE_DIR "/IMUconfig.cfg");  
             parser->loadVar("calibMatrix_acc", calibMatrix);
             parser->loadVar("offset_acc", Offset);
             
@@ -75,7 +73,7 @@ class IMU : protected gpio {
             settings = config.load(mode);
             delay = settings.delay_us;
 
-            /*
+            
             bmi088_ = std::make_unique<BMI088>(settings.accel_scale, settings.accel_odr, settings.accel_osr, 
                                                 settings.gyro_scale, settings.gyro_odr, calibMatrix, Offset);
 
@@ -109,13 +107,12 @@ class IMU : protected gpio {
 
                 dps_timer->start(true);
                 while(counter < 10){
-                    if(!dps_timer->check()) {
-                        continue;
-                    }
+                    if(!dps_timer->check()) continue;
+
                     if (dps368_->readCalibrated_ifnew(pressure_Pa, temperature_C)){
-                            altitude_m = dps368_->calculateAltitude(pressure_Pa, temperature_C);
-                            avg += altitude_m;
-                            counter++;
+                        altitude_m = dps368_->calculateAltitude(pressure_Pa, temperature_C);
+                        avg += altitude_m;
+                        counter++;
                     }
                     else dps_timer->set(true); // jitter compensation
                     
@@ -130,6 +127,13 @@ class IMU : protected gpio {
                 }
                 altitude0 = avg /10.0;
 
+                BaroData* baro_slot = baro_buffer_.prepare_write();
+                baro_slot->pressure_Pa = pressure_Pa;
+                baro_slot->temperature_C = temperature_C;
+                baro_slot->altitude_m = altitude0;
+                baro_slot->vertical_speed_mps = 0.0;
+                baro_buffer_.commit();
+
                 EKF = std::make_unique<srKF>(
                     Eigen::Matrix4d{{1,0,0,0}, {0,0.5,0,0}, {0,0,0.1,0}, {0,0,0,0.05}},
                     Eigen::Matrix<double,1,1>{{10.0}},
@@ -141,12 +145,12 @@ class IMU : protected gpio {
             }
 
             bmi_accel_timer->start(true);
-            std::this_thread::sleep_for(std::chrono::microseconds(500));
+            std::this_thread::sleep_for(std::chrono::microseconds(509));
             bmi_gyro_timer->start(true);
-            std::this_thread::sleep_for(std::chrono::microseconds(500));
+            std::this_thread::sleep_for(std::chrono::microseconds(491));
             if(use_mag) mag_timer->start(true);
             quat_timer->start(true);
-            */
+            
         }
 
         bool update_accel_raw() {
@@ -185,6 +189,8 @@ class IMU : protected gpio {
                 if(dps368_){
                     // Update EKF with new accel data
                     const QuatData* quat = latest_quat();
+                    const BaroData* barodat_ = latest_baro();
+
                     Eigen::Quaterniond q(quat->q[0], quat->q[1], quat->q[2], quat->q[3]);
                     Eigen::Vector3d a(slot->x, slot->y, slot->z);
                     a = q * a; 
@@ -193,6 +199,9 @@ class IMU : protected gpio {
                     BaroData* baro_slot = baro_buffer_.prepare_write();
                     baro_slot->altitude_m = EKF->xhat(0) - altitude0;  
                     baro_slot->vertical_speed_mps = EKF->xhat(1);
+                    baro_slot->pressure_Pa = barodat_->pressure_Pa;
+                    baro_slot->temperature_C = barodat_->temperature_C;
+
                     baro_buffer_.commit();
                     has_new_baro_.store(true, std::memory_order_release);
                 }
@@ -271,7 +280,6 @@ class IMU : protected gpio {
                 BaroData* slot = baro_buffer_.prepare_write();
 
                 bool ok = dps368_->readCalibrated(slot->pressure_Pa, slot->temperature_C);
-
                 if (ok) {
                     EKF->KF_update_alt(Eigen::VectorXd::Constant(1, slot->pressure_Pa), slot->temperature_C + 273.15);
                     EKF->SageHusa_update_alt();
@@ -432,14 +440,15 @@ class IMU : protected gpio {
             update_accel();
             if (mag_ != nullptr) update_mag();
             if (dps368_ != nullptr) update_baro();
+            
         }
 
         ~IMU(){
 
             stop_sensor_thread();
 
-            bmi088_.reset();
-            vqf.reset();
+            if(bmi088_) bmi088_.reset();
+            if(vqf) vqf.reset();
             if(parser) parser.reset();
             if(mag_) mag_.reset();
             if(dps368_) dps368_.reset();
@@ -449,9 +458,9 @@ class IMU : protected gpio {
                 pwm_.reset();
             }
 
-            bmi_accel_timer->stop();
-            bmi_gyro_timer->stop();
-            quat_timer->stop();
+            if(bmi088_) bmi_accel_timer->stop();
+            if(bmi088_) bmi_gyro_timer->stop();
+            if(bmi088_ || mag_) quat_timer->stop();
             if(mag_) mag_timer->stop();
             if(dps368_) dps_timer->stop();
 
@@ -544,10 +553,6 @@ class IMU : protected gpio {
         DataBuffer<BaroData, 2>  baro_buffer_;
         DataBuffer<QuatData, 3>  quat_buffer_;
         DataBuffer<PWMval, 2>    pwm_buffer_;
-
-        AccelData accdat;
-        GyroData gydat;
-        MagData magdat;
 
         std::unique_ptr<DPS368> dps368_;
         std::unique_ptr<BMI088> bmi088_;

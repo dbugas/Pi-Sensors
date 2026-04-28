@@ -3,9 +3,18 @@
 #include <chrono>
 #include <thread>
 #include <cmath>
+#include <unistd.h> 
+#include <csignal> 
+#include <iomanip>
 
 #include "LIS2MDL.h"
 #include "Parser.h"
+
+volatile bool running = true;
+
+void signalHandler(int signal) {
+    running = false;
+}
 
 int main() {
 
