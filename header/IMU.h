@@ -13,7 +13,6 @@
 #include "DPS368.h"
 #include "LIS2MDL.h"
 #include "PCA9685.h"
-#include "ads1115.h"
 #include "vqf.h"
 #include "timer.h"
 #include "DataBuffer.h"
@@ -73,7 +72,6 @@ class IMU : protected gpio {
             settings = config.load(mode);
             delay = settings.delay_us;
 
-            
             bmi088_ = std::make_unique<BMI088>(settings.accel_scale, settings.accel_odr, settings.accel_osr, 
                                                 settings.gyro_scale, settings.gyro_odr, calibMatrix, Offset);
 
@@ -321,7 +319,7 @@ class IMU : protected gpio {
             return quat_buffer_.get_latest();
         }
         bool get_latest_accel_and_consume(AccelData& out) noexcept {
-            if (!has_new_accel_.exchange(false, std::memory_order_acq_rel)) {
+            if (!has_new_accel_.exchange(false, std::memory_order_acquire)) {
                 return false;  // no new data
             }
 
@@ -334,7 +332,7 @@ class IMU : protected gpio {
         }
 
         bool get_latest_gyro_and_consume(GyroData& out) noexcept {
-            if (!has_new_gyro_.exchange(false, std::memory_order_acq_rel)) {
+            if (!has_new_gyro_.exchange(false, std::memory_order_acquire)) {
                 return false;
             }
             const auto* latest = gyro_buffer_.get_latest();
@@ -346,7 +344,7 @@ class IMU : protected gpio {
         }
         
         bool get_latest_mag_and_consume(MagData& out) noexcept {
-            if (!has_new_mag_.exchange(false, std::memory_order_acq_rel)) {
+            if (!has_new_mag_.exchange(false, std::memory_order_acquire)) {
                 return false;
             }
             const auto* latest = mag_buffer_.get_latest();
@@ -358,7 +356,7 @@ class IMU : protected gpio {
         }
 
         bool get_latest_baro_and_consume(BaroData& out) noexcept {
-            if(!has_new_baro_.exchange(false, std::memory_order_acq_rel)) {
+            if(!has_new_baro_.exchange(false, std::memory_order_acquire)) {
                 return false;
             }
             const auto* latest = baro_buffer_.get_latest();
@@ -369,7 +367,7 @@ class IMU : protected gpio {
             return false;
         }
         bool get_latest_quat_and_consume(QuatData& out) noexcept {
-            if(!has_new_quat_.exchange(false, std::memory_order_acq_rel)){
+            if(!has_new_quat_.exchange(false, std::memory_order_acquire)){
                 return false;
             }
             const auto* latest = quat_buffer_.get_latest();
@@ -390,22 +388,20 @@ class IMU : protected gpio {
             pwm_->setPWMFreq(pwm_freq);
 
         }
-        void Set_pwm(const uint8_t start_, const uint8_t count_, const uint16_t* off_vals){
-           if(!pwm_){
-               std::cerr << "PCA9685 not initialized\n";
-               return;
-           }
-           if(count_ > 8){
-               std::cout << "Count must be between 1 and 8. \n";
-               return;
-           }
-           PWMval* slot = pwm_buffer_.prepare_write();
-           slot->start = start_;
-           slot->count = count_;
-           std::copy(off_vals, off_vals + count_, slot->pwm_Val.begin());
 
-           pwm_buffer_.commit();
-           newPWM.store(true, std::memory_order_release);
+        void Set_pwm(const uint8_t start_, const uint8_t count_, const uint16_t* off_vals){
+            if(!pwm_){
+                std::cerr << "PCA9685 not initialized\n";
+                return;
+            }
+
+            if(count_ > 8) {
+                pwm_->setPWMMultiple(start_, 8, on_vals, off_vals);
+                pwm_->setPWMMultiple(start_ + 9, count_ - 8, on_vals, off_vals);
+            }
+            else {
+                 pwm_->setPWMMultiple(start_, count_, on_vals, off_vals);
+            }
         }
 
         // Starts thread to read all IMU sensors (BMI088, DPS310, LISxMDL)
@@ -443,29 +439,29 @@ class IMU : protected gpio {
             
         }
 
-        ~IMU(){
+    ~IMU() {
+        if (bmi_accel_timer) bmi_accel_timer->stop();
+        if (bmi_gyro_timer)  bmi_gyro_timer->stop();
+        if (mag_timer)       mag_timer->stop();
+        if (dps_timer)       dps_timer->stop();
+        if (quat_timer)      quat_timer->stop();
 
-            stop_sensor_thread();
+        stop_sensor_thread();
 
-            if(bmi088_) bmi088_.reset();
-            if(vqf) vqf.reset();
-            if(parser) parser.reset();
-            if(mag_) mag_.reset();
-            if(dps368_) dps368_.reset();
-            if(pwm_) {
-                pwm_->setPWMMultiple(0, 8, on_vals, on_vals); // set all pwm channels to 0
-                pwm_->setPWMMultiple(8, 8, on_vals, on_vals);
-                pwm_.reset();
-            }
-
-            if(bmi088_) bmi_accel_timer->stop();
-            if(bmi088_) bmi_gyro_timer->stop();
-            if(bmi088_ || mag_) quat_timer->stop();
-            if(mag_) mag_timer->stop();
-            if(dps368_) dps_timer->stop();
-
-            close_gpio();
+        if (pwm_) {
+            pwm_->setPWMMultiple(0, 8, on_vals, on_vals);
+            pwm_->setPWMMultiple(8, 8, on_vals, on_vals);
+            pwm_.reset();
         }
+
+        bmi088_.reset();
+        mag_.reset();
+        dps368_.reset();
+        vqf.reset();
+        parser.reset();
+
+        close_gpio();
+    }
     private:
 
     // read all sensors in the imu until running = false
@@ -479,19 +475,13 @@ class IMU : protected gpio {
 
         while (running) {
             update_imu();
-            
-            if(newPWM.load(std::memory_order_acquire)){
-                const PWMval* slot = pwm_buffer_.get_latest();
-                pwm_->setPWMMultiple(slot->start, slot->count, on_vals, slot->pwm_Val.data());
-                newPWM.store(false, std::memory_order_release);
-            }
-
+        
             //______ Update Quat ______
             if(!quat_timer->check()) continue;
 
             if(mag_ != nullptr){
                 QuatData* slot = quat_buffer_.prepare_write();
-                vqf->getQuat6D(slot->q);
+                vqf->getQuat9D(slot->q);
                 slot->timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
                 
@@ -583,7 +573,6 @@ class IMU : protected gpio {
         std::atomic<bool> isaccelRDY{false};
 
         // pwm 
-        std::atomic<bool> newPWM{false};
         uint16_t on_vals[16] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};  
 
         // sensor readings

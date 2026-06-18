@@ -1,163 +1,145 @@
-#include <pigpio.h>
+// main.cpp — Load cell with callback-driven moving average filter
+//
+// The ADC thread fires a callback on every new sample at the exact data rate.
+// The callback updates the moving average filter and stores the result.
+// The main thread reads the filtered weight at its own pace.
+//
+// Build: g++ -std=c++17 -Wall -O2 -o main main.cpp MCP356x.cpp \
+//            -lpigpio -lrt -pthread
+// Run:   sudo ./main
+
+#include "MCP356x.h"
 #include <iostream>
-#include <cstdint>
-#include <unistd.h> // usleep
 #include <iomanip>
+#include <atomic>
+#include <unistd.h>
 
-// ==========================
-// MCP3561 command builder
-// ==========================
+// ---- Load cell configuration ----
+static constexpr uint8_t  CH_POS       = 0;
+static constexpr uint8_t  CH_NEG       = 1;
+static constexpr double   EXCITATION_V = 3.3;
+static constexpr double   CAPACITY_KG  = 10.0;
+static constexpr double   KNOWN_WEIGHT = 0.5;
+static constexpr int      CAL_SAMPLES  = 64;
 
-// Command types
-enum CommandType : uint8_t
-{
-    FAST_COMMAND      = 0b00,
-    STATIC_READ       = 0b01,
-    INCREMENTAL_WRITE = 0b10,
-    INCREMENTAL_READ  = 0b11
+// ---- Moving average filter ----
+// LEN is chosen to give ~1Hz output bandwidth regardless of ADC rate.
+// At Precision mode (35 sps with AZ_MUX), LEN=35 averages over 1 second.
+// Adjust to taste: smaller = more responsive, larger = quieter.
+struct MovingAvg {
+    static constexpr int LEN = 35;
+    double buf[LEN] = {};
+    int    idx      = 0;
+    double sum      = 0.0;
+    bool   filled   = false;
+
+    double update(double val) {
+        sum     -= buf[idx];
+        buf[idx] = val;
+        sum     += val;
+        idx      = (idx + 1) % LEN;
+        if (idx == 0) filled = true;
+        int n = filled ? LEN : (idx == 0 ? LEN : idx);
+        return sum / n;
+    }
+    void reset() { *this = MovingAvg{}; }
 };
 
-// Fast commands
-enum FastCommand
+// ---- Calibration helper ----
+static double averageReads(MCP356x& adc, int n)
 {
-    RESET = 0x6
-};
-
-// Register addresses (partial)
-enum Register
-{
-    CONFIG0 = 0x1,
-    CONFIG1 = 0x2,
-    CONFIG2 = 0x3,
-    CONFIG3 = 0x4,
-    MULTIPLEXER = 0x6
-
-};
-
-// Read 24-bit ADC data + STATUS and convert to voltage
-double readVoltage(int spi_handle, uint8_t dev_addr_bits, double vref, uint8_t gain)
-{
-    uint8_t cmd = dev_addr_bits | ((0x00 << 2) | CommandType::INCREMENTAL_READ);  // Incremental Read of ADC_DATA (0x00)
-
-    char tx[4] = {(char)cmd, 0x00, 0x00, 0x00};
-    char rx[4] = {0};
-
-    spiXfer(spi_handle, tx, rx, 4);
-
-    // rx[0] = STATUS byte
-    // rx[1..3] = 24-bit signed ADC code (MSB first)
-    int32_t adc_code = ((int32_t)(unsigned char)rx[1] << 16) |
-                       ((int32_t)(unsigned char)rx[2] << 8)  |
-                       (unsigned char)rx[3];
-
-    // Convert from 24-bit signed to signed 32-bit (sign extend)
-    if (adc_code & 0x800000) {
-        adc_code |= 0xFF000000;   // Sign extend negative values
+    double sum = 0.0;
+    for (int i = 0; i < n; ++i) {
+        sum += adc.readDifferential(CH_POS, CH_NEG);
+        usleep(10'000);
     }
-
-    // Voltage calculation formula
-    // V = (adc_code / 2^23) * (Vref / Gain)
-    double voltage = (adc_code / 8388608.0) * (vref / gain);
-
-    std::cout << "STATUS=0x" << std::hex << std::uppercase << std::setw(2) << (unsigned)(unsigned char)rx[0]
-              << "  ADC_CODE=0x" << std::setw(6) << std::setfill('0') << (adc_code & 0xFFFFFF)
-              << std::dec << "  Voltage = " << std::fixed << std::setprecision(6) << voltage << " V\n";
-
-    return voltage;
-}
-
-uint8_t buildCommand(uint8_t cmdType, uint8_t addr, uint8_t devAddr = 0)
-{
-    return ((cmdType & 0x3) << 6) | ((addr & 0xF) << 2) | (devAddr & 0x3);
-}
-
-void rwRegister(int spi_handle, uint8_t dev_addr_bits, uint8_t reg, CommandType cmdType, uint8_t data = 0x00)
-{
-    uint8_t base_cmd = (reg << 2) | (uint8_t)cmdType;
-    uint8_t cmd      = dev_addr_bits | base_cmd;
-
-    if (cmdType == CommandType::INCREMENTAL_WRITE)
-    {
-        // Write: send Command + 1 data byte
-        char tx[2] = {(char)cmd, (char)data};
-        char rx[2] = {0};
-        spiXfer(spi_handle, tx, rx, 2);
-
-        std::cout << "Write DA=" << (dev_addr_bits >> 6)
-                  << " Cmd=0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)cmd
-                  << "  Value=0x" << std::setw(2) << (int)data
-                  << "  -> STATUS=0x" << std::setw(2) << (unsigned)(unsigned char)rx[0] << "\n";
-    }
-    else
-    {
-        // Read: send Command + 2 dummy bytes (or more if you want)
-        char tx[3] = {(char)cmd, 0x00};
-        char rx[3] = {0};
-        spiXfer(spi_handle, tx, rx, 2);
-
-        std::cout << "Read  DA=" << (dev_addr_bits >> 6)
-                  << " (0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)dev_addr_bits << ") | "
-                  << "Cmd=0x" << std::setw(2) << (int)cmd 
-                  << " -> STATUS=0x" << std::setw(2) << (unsigned)(unsigned char)rx[0]
-                  << "  Reg=0x" << std::setw(2) << (int)reg 
-                  << "=0x" << std::setw(2) << (unsigned)(unsigned char)rx[1] << "\n";
-    }
-
+    return sum / n;
 }
 
 int main()
 {
-    // ==========================
-    // Initialize pigpio
-    // ==========================
-    if (gpioInitialise() < 0)
-    {
-        std::cerr << "pigpio init failed\n";
-        return -1;
+    if (gpioInitialise() < 0) { std::cerr << "pigpio init failed\n"; return 1; }
+
+    MCP356x adc(2, 0x01, 2.5, ADC_Mode::Precision);
+
+    try { adc.begin(); }
+    catch (const std::exception& e) {
+        std::cerr << "ADC init failed: " << e.what() << "\n";
+        gpioTerminate(); return 1;
     }
 
-    // ==========================
-    // SPI1 setup
-    // ==========================
-    uint32_t spiFlags = (0 | (1 << 8)); // mode 0 + SPI1 enable
-    int spi_handle = spiOpen(2, 6000000, spiFlags); // channel 2 = SPI1 CE0
+    std::cout << "MCP356x ready  ["
+              << "rate=" << adc.dataRateHz() << " sps  "
+              << "period=" << adc.periodUs() << " µs]\n\n";
 
-    if (spi_handle < 0)
-    {
-        std::cerr << "SPI open failed\n";
-        gpioTerminate();
-        return -1;
+    // ---- Tare ----
+    std::cout << "Remove all load then press Enter...\n";
+    std::cin.get();
+    double tare_v = averageReads(adc, CAL_SAMPLES);
+    std::cout << "Tare: " << std::fixed << std::setprecision(4)
+              << tare_v * 1000.0 << " mV\n\n";
+
+    // ---- Calibrate ----
+    std::cout << "Place " << KNOWN_WEIGHT << " kg then press Enter...\n";
+    std::cin.get();
+    double cal_v     = averageReads(adc, CAL_SAMPLES);
+    double net_cal_v = cal_v - tare_v;
+
+    if (std::abs(net_cal_v) < 1e-9) {
+        std::cerr << "Calibration failed — signal too small\n";
+        gpioTerminate(); return 1;
     }
 
-    // ==========================
-    // 2. Read CONFIG0 register
-    // ==========================
+    double v_per_kg    = net_cal_v / KNOWN_WEIGHT;
+    double sensitivity = net_cal_v * 1000.0 / EXCITATION_V;
 
-    uint8_t dev_addr_bits = 0x01 << 6;                // DA1:DA0 in bits 7:6
-    uint8_t data = 0b01100011;
-    rwRegister(spi_handle, dev_addr_bits, Register::CONFIG0, CommandType::INCREMENTAL_WRITE, data);
-    usleep(5000); 
-    data = 0x0C;
-    rwRegister(spi_handle, dev_addr_bits, Register::CONFIG1, CommandType::INCREMENTAL_WRITE, data);
-    // config2 default, gain = 1
-    usleep(5000); 
-    data = 0x80;
-    rwRegister(spi_handle, dev_addr_bits, Register::CONFIG3, CommandType::INCREMENTAL_WRITE, data);
-    usleep(5000); 
-    data = 0b00001000;
-    rwRegister(spi_handle, dev_addr_bits, Register::MULTIPLEXER, CommandType::INCREMENTAL_WRITE, data);
-    
-    std::cout << "\n=== Starting continuous voltage reading ===\n";
-    std::cout << "Vref = 2.5V, Gain = 1x\n\n";
+    std::cout << "Calibration complete\n"
+              << "  Sensitivity : " << sensitivity << " mV/V\n"
+              << "  Scale factor: " << v_per_kg * 1000.0 << " mV/kg\n\n";
 
-    readVoltage(spi_handle, dev_addr_bits, 2.5, 1);
+    // ---- Shared state written by callback, read by main ----
+    MovingAvg            filter;
+    std::atomic<double>  filtered_kg{0.0};
+    std::atomic<double>  raw_kg{0.0};
+    std::atomic<uint32_t> sample_count{0};
 
-    // ==========================
-    // Cleanup
-    // ==========================
-    spiClose(spi_handle);
+    // ---- Callback — runs in ADC thread at the data rate ----
+    // Receives fresh ADCData, updates filter, stores results atomically.
+    adc.setCallback([&](const ADCData& data) {
+        double net_v  = data.voltage - tare_v;
+        double raw     = net_v / v_per_kg;
+        double filtered = filter.update(raw);
+
+        // Atomic store — safe to read from main thread without a mutex
+        raw_kg.store(raw,      std::memory_order_relaxed);
+        filtered_kg.store(filtered, std::memory_order_relaxed);
+        sample_count.fetch_add(1,   std::memory_order_relaxed);
+    });
+
+    // ---- Start ADC thread ----
+    adc.configureContinuous(CH_POS, CH_NEG);
+    adc.start_sensor_thread();
+
+    // ---- Main thread: print at 2 Hz ----
+    std::cout << std::setw(14) << "Raw (kg)"
+              << std::setw(14) << "Filtered (kg)"
+              << std::setw(10) << "Samples\n"
+              << std::string(38, '-') << "\n";
+
+    for (;;) {
+        double   raw      = raw_kg.load(std::memory_order_relaxed);
+        double   filtered = filtered_kg.load(std::memory_order_relaxed);
+        uint32_t n        = sample_count.load(std::memory_order_relaxed);
+
+        std::cout << std::setw(14) << std::fixed << std::setprecision(4) << raw
+                  << std::setw(14) << filtered
+                  << std::setw(10) << n << "\n";
+
+        usleep(500'000);  // print at 2 Hz — filter does the work at 35 Hz
+    }
+
+    adc.stop_sensor_thread();
     gpioTerminate();
-
     return 0;
 }
-// g++ -Wall -o main main.cpp -lpigpio -lrt 
+// g++ -std=c++17 -Wall -O2 -o main main.cpp MCP356x.cpp -lpigpio -lrt -pthread

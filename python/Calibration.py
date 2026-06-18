@@ -50,16 +50,16 @@ x0 = 0.00474523
 # Configuration
 # =============================================
 GENERATE_RANDOM_ELLIPSOID = False     # use real time data. 
-SAVE_DATA = False                     # save real time data
-LOAD_DATA = True                     # Load real time data
+SAVE_DATA = True                     # save real time data
+LOAD_DATA = False                     # Load real time data
 filepath = "acc_xyz.csv"              # path for loading data
-FileName = "acc_xyz1.csv"              # file name for saved data
+FileName = "acc_xyz.csv"              # file name for saved data
 GET_MAGNETOMETER_DATA = False         # use magnetometer for real time data
 GET_ACCELEROMETER_DATA = True         # use accelerometer for real time data
 if(not GENERATE_RANDOM_ELLIPSOID):
     try:
-        # Choose a performance mode (Ultra, High, Medium, Low)
-        imu = imupy.IMU(imupy.PerformanceMode.High, Use_Mag=True, Use_Barometer=True)
+        # Choose a performance mode (Ultra, High, Medium, Low, Custom)
+        imu = imupy.IMU(imupy.PerformanceMode.Custom, Use_Mag=True, Use_Barometer=True)
         print("Sensor initialized successfully")
     except Exception as e:
         print("Failed to initialize sensor:", e)
@@ -596,6 +596,10 @@ def plot_sphere_points(sphere_points):
 # Real Time Data
 # =============================================
 def Get_data(imu, GET_MAGNETOMETER_DATA, GET_ACCELEROMETER_DATA):
+    data = []
+    if(GET_MAGNETOMETER_DATA and GET_ACCELEROMETER_DATA):
+        print("Only can do magnetometer or accelerometer!")
+        return np.array(data).T
     if(GET_MAGNETOMETER_DATA):
         print("Magnetometer - Press SPACE to stop")
         print("-----------------------------------------\n")
@@ -613,7 +617,6 @@ def Get_data(imu, GET_MAGNETOMETER_DATA, GET_ACCELEROMETER_DATA):
 
         running = True
         collect = False
-        data = []
         while running:
             # Read data
             try:
@@ -623,14 +626,18 @@ def Get_data(imu, GET_MAGNETOMETER_DATA, GET_ACCELEROMETER_DATA):
                         x, y, z = imu.Mag_raw()
                         print(f"{x:12.5f}  {y:12.5f}  {z:12.5f} ",
                           end='\r', flush=True)
-                        data.append([x,y,z])
+                        norm = np.sqrt(x**2 + y**2 + z**2)
+                        if(norm > 0.1 and norm < 2.0):
+                            data.append([x,y,z])
                 if(GET_ACCELEROMETER_DATA):
                     if(collect):
                         imu.update_imu()
                         x, y, z = imu.Accel_raw()
                         print(f"{x:12.5f}  {y:12.5f}  {z:12.5f} ",
                           end='\r', flush=True)
-                        data.append([x,y,z])
+                        norm = np.sqrt(x**2 + y**2 + z**2)
+                        if(norm > 0.1 and norm < 1.5):
+                            data.append([x,y,z])
                     if(key == 'w' and not collect):
                         print("collect on")
                         collect = True
@@ -651,7 +658,7 @@ def Get_data(imu, GET_MAGNETOMETER_DATA, GET_ACCELEROMETER_DATA):
             elif key == '\x03':  # Ctrl+C
                 raise KeyboardInterrupt
 
-            time.sleep(0.0025)  # ~12–13 updates/sec
+            time.sleep(0.0025) 
 
     except KeyboardInterrupt:
         print("\n\nStopped by Ctrl+C")
